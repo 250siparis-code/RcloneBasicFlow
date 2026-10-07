@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
-import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +18,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
+import dev.galaxy.rclonecards.engine.DriveConnector
+import dev.galaxy.rclonecards.engine.ShortcutIconFactory
 import dev.galaxy.rclonecards.model.TaskCard
 import dev.galaxy.rclonecards.service.RcloneService
 import dev.galaxy.rclonecards.service.TaskScheduler
@@ -38,16 +39,16 @@ class MainActivity : ComponentActivity() {
     private val importConfigLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             ConfigManager.importFromUri(this, uri)
-                .onSuccess { Toast.makeText(this, "rclone.conf içe aktarıldı", Toast.LENGTH_SHORT).show() }
-                .onFailure { Toast.makeText(this, "Config okunamadı: ${it.message}", Toast.LENGTH_LONG).show() }
+                .onSuccess { Toast.makeText(this, "rclone.conf imported", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(this, "Config could not be read: ${it.message}", Toast.LENGTH_LONG).show() }
         }
     }
 
     private val exportConfigLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         if (uri != null) {
             ConfigManager.exportToUri(this, uri)
-                .onSuccess { Toast.makeText(this, "rclone.conf dışa aktarıldı", Toast.LENGTH_SHORT).show() }
-                .onFailure { Toast.makeText(this, "Config yazılamadı: ${it.message}", Toast.LENGTH_LONG).show() }
+                .onSuccess { Toast.makeText(this, "rclone.conf exported", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(this, "Config could not be written: ${it.message}", Toast.LENGTH_LONG).show() }
         }
     }
 
@@ -57,15 +58,15 @@ class MainActivity : ComponentActivity() {
             val oldIds = CardStore.cards.value.map { it.id }
             val result = runCatching {
                 val raw = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: error("Dosya okunamadı")
+                    ?: error("File could not be read")
                 CardStore.importJson(raw).getOrThrow()
             }
             result.onSuccess { count ->
                 oldIds.forEach { TaskScheduler.cancel(this, it) }
                 CardStore.cards.value.forEach { TaskScheduler.apply(this, it.id) }
-                Toast.makeText(this, "$count kart geri yüklendi", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "$count cards restored", Toast.LENGTH_SHORT).show()
             }.onFailure { error ->
-                Toast.makeText(this, "Kart yedeği açılamadı: ${error.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Card backup could not be opened: ${error.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -74,11 +75,11 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             val result = runCatching {
                 contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(CardStore.exportJson()) }
-                    ?: error("Dosya yazılamadı")
+                    ?: error("File could not be written")
             }
             Toast.makeText(
                 this,
-                if (result.isSuccess) "Kart yedeği kaydedildi" else "Yedek kaydedilemedi: ${result.exceptionOrNull()?.message}",
+                if (result.isSuccess) "Card backup saved" else "Backup could not be saved: ${result.exceptionOrNull()?.message}",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -96,6 +97,15 @@ class MainActivity : ComponentActivity() {
                     externalNavigation = externalNavigation,
                     onImportConfig = { importConfigLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) },
                     onExportConfig = { exportConfigLauncher.launch("rclone.conf") },
+                    onConnectGoogleDrive = { remoteName, clientId, clientSecret ->
+                        DriveConnector.connect(this, remoteName, clientId, clientSecret) { result ->
+                            result.onSuccess { name ->
+                                Toast.makeText(this, "$name connected", Toast.LENGTH_LONG).show()
+                            }.onFailure { error ->
+                                Toast.makeText(this, "Google Drive connection failed: ${error.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
                     onImportCards = { importCardsLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                     onExportCards = { exportCardsLauncher.launch("rclone-cards-backup.json") },
                     onRequestAllFiles = { requestAllFilesAccess() },
@@ -185,7 +195,7 @@ class MainActivity : ComponentActivity() {
         val shortcut = ShortcutInfo.Builder(this, "rclone-${card.id}")
             .setShortLabel(card.title.take(20))
             .setLongLabel("${card.title} · ${card.actionLabel}".take(60))
-            .setIcon(Icon.createWithResource(this, android.R.drawable.stat_sys_upload_done))
+            .setIcon(ShortcutIconFactory.create(card))
             .setIntent(launch)
             .build()
 

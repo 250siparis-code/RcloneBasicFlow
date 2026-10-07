@@ -28,7 +28,12 @@ object RcloneEngine {
         if (userArgs.firstOrNull()?.substringAfterLast('/')?.equals("rclone", ignoreCase = true) == true) {
             userArgs.removeAt(0)
         }
-        require(userArgs.isNotEmpty()) { "rclone alt komutu eksik" }
+
+        for (i in userArgs.indices) {
+            userArgs[i] = normalizeTermuxPath(userArgs[i])
+        }
+
+        require(userArgs.isNotEmpty()) { "rclone subcommand is missing" }
 
         // --progress terminal kontrol karakterleri üretir. Uygulama bunun yerine JSON stats okur.
         userArgs.removeAll { it == "--progress" || it == "-P" || it.startsWith("--progress=") }
@@ -126,6 +131,20 @@ object RcloneEngine {
         }.getOrElse {
             raw.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList()
         }
+    }
+
+    private fun normalizeTermuxPath(value: String): String {
+        val prefixes = listOf(
+            "~/storage/shared",
+            "/data/data/com.termux/files/home/storage/shared"
+        )
+        for (prefix in prefixes) {
+            if (value == prefix) return "/storage/emulated/0"
+            if (value.startsWith("$prefix/")) {
+                return "/storage/emulated/0/" + value.removePrefix("$prefix/")
+            }
+        }
+        return value
     }
 
     private fun hasVerboseFlag(args: List<String>) = args.any {

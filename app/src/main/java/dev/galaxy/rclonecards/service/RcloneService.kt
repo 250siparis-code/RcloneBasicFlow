@@ -84,7 +84,7 @@ class RcloneService : Service() {
                     cardId = card.id,
                     title = card.title,
                     status = JobStatus.ERROR,
-                    lastError = "librclone.so bulunamadı. APK, rclone motoru eklenmeden derlenmiş."
+                    lastError = "librclone.so was not found. The APK was built without the rclone engine."
                 )
             )
             updateForeground()
@@ -93,7 +93,7 @@ class RcloneService : Service() {
 
         val args = runCatching { RcloneEngine.buildProcessArgs(this, card.command, card.transfers, card.checkers, card.bwlimit) }.getOrElse { error ->
             JobRepository.put(
-                JobState(card.id, card.title, JobStatus.ERROR, lastError = error.message ?: "Komut ayrıştırılamadı")
+                JobState(card.id, card.title, JobStatus.ERROR, lastError = error.message ?: "Command could not be parsed")
             )
             updateForeground()
             return
@@ -118,7 +118,7 @@ class RcloneService : Service() {
                 val shellArgs = mutableListOf(
                     "/system/bin/sh",
                     "-c",
-                    "echo \\$\\$ > \"\\$1\"; shift; exec \"\\$@\"",
+                    "echo \$\$ > \"\$1\"; shift; exec \"\$@\"",
                     "rclonecards",
                     pidFile.absolutePath
                 ).apply {
@@ -181,7 +181,7 @@ class RcloneService : Service() {
                         it.copy(
                             status = JobStatus.ERROR,
                             exitCode = exit,
-                            lastError = it.lastError ?: "rclone hata kodu: $exit",
+                            lastError = it.lastError ?: "rclone exit code: $exit",
                             finishedAtMillis = System.currentTimeMillis()
                         )
                     }
@@ -280,17 +280,17 @@ class RcloneService : Service() {
 
         val pid = processIds[cardId]
         if (pid == null) {
-            JobRepository.appendLog(cardId, "ERROR  İşlem PID bilgisi bulunamadı")
+            JobRepository.appendLog(cardId, "ERROR  Process PID was not found")
             return
         }
 
         runCatching {
             Os.kill(pid, OsConstants.SIGSTOP)
             JobRepository.update(cardId) { it.copy(status = JobStatus.PAUSED) }
-            JobRepository.appendLog(cardId, "PAUSED  İşlem duraklatıldı")
+            JobRepository.appendLog(cardId, "PAUSED  Task paused")
             updateForeground()
         }.onFailure {
-            JobRepository.appendLog(cardId, "ERROR  Duraklatılamadı: ${it.message}")
+            JobRepository.appendLog(cardId, "ERROR  Pause failed: ${it.message}")
         }
     }
 
@@ -299,17 +299,17 @@ class RcloneService : Service() {
 
         val pid = processIds[cardId]
         if (pid == null) {
-            JobRepository.appendLog(cardId, "ERROR  İşlem PID bilgisi bulunamadı")
+            JobRepository.appendLog(cardId, "ERROR  Process PID was not found")
             return
         }
 
         runCatching {
             Os.kill(pid, OsConstants.SIGCONT)
             JobRepository.update(cardId) { it.copy(status = JobStatus.RUNNING) }
-            JobRepository.appendLog(cardId, "INFO  İşlem devam ediyor")
+            JobRepository.appendLog(cardId, "INFO  Task resumed")
             updateForeground()
         }.onFailure {
-            JobRepository.appendLog(cardId, "ERROR  Devam ettirilemedi: ${it.message}")
+            JobRepository.appendLog(cardId, "ERROR  Resume failed: ${it.message}")
         }
     }
 
@@ -333,7 +333,7 @@ class RcloneService : Service() {
         }
         processIds.remove(cardId)
         synchronized(queueLock) { queue.remove(cardId) }
-        JobRepository.appendLog(cardId, "STOP  İşlem kullanıcı tarafından durduruldu")
+        JobRepository.appendLog(cardId, "STOP  Task stopped by user")
         updateForeground()
         maybeStopSelf()
     }

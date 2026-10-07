@@ -43,17 +43,23 @@ jobs:
           NDK_VERSION: 27.2.12479018
         run: ./scripts/build-rclone.sh
 
+      - name: Keep a stable test signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: rclonecards-debug-keystore-v1
+
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug
+      - name: Build minified APK
+        run: gradle --no-daemon :app:assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: RcloneCards-arm64-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: RcloneCards-arm64-minified
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

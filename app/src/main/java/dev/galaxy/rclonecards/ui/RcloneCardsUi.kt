@@ -79,11 +79,13 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -99,11 +101,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -150,20 +155,28 @@ private sealed interface Screen {
 
 @Composable
 fun RcloneCardsTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            background = Amoled,
-            surface = Surface,
-            surfaceVariant = Surface2,
-            primary = Green,
-            secondary = Purple,
-            error = Red,
-            onBackground = TextPrimary,
-            onSurface = TextPrimary,
-            outline = Outline
-        ),
-        content = content
-    )
+    val density = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(
+            density = density.density,
+            fontScale = density.fontScale * 1.08f
+        )
+    ) {
+        MaterialTheme(
+            colorScheme = darkColorScheme(
+                background = Amoled,
+                surface = Surface,
+                surfaceVariant = Surface2,
+                primary = Green,
+                secondary = Purple,
+                error = Red,
+                onBackground = TextPrimary,
+                onSurface = TextPrimary,
+                outline = Outline
+            ),
+            content = content
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,6 +185,7 @@ fun RcloneCardsRoot(
     externalNavigation: StateFlow<String?>,
     onImportConfig: () -> Unit,
     onExportConfig: () -> Unit,
+    onConnectGoogleDrive: (String, String, String) -> Unit,
     onImportCards: () -> Unit,
     onExportCards: () -> Unit,
     onRequestAllFiles: () -> Unit,
@@ -211,7 +225,7 @@ fun RcloneCardsRoot(
                 jobs = jobs,
                 onRun = { card ->
                     if (needsStorage(card) && !hasAllFilesAccess()) {
-                        toast(context, "Önce ‘Tüm dosyalara erişim’ iznini ver.")
+                        toast(context, "Grant “All files access” first.")
                         onRequestAllFiles()
                     } else {
                         if (!hasNotificationPermission()) onRequestNotification()
@@ -262,6 +276,7 @@ fun RcloneCardsRoot(
                 onBack = { screen = Screen.Home },
                 onImportConfig = onImportConfig,
                 onExportConfig = onExportConfig,
+                onConnectGoogleDrive = onConnectGoogleDrive,
                 onImportCards = onImportCards,
                 onExportCards = onExportCards,
                 onRequestAllFiles = onRequestAllFiles,
@@ -300,7 +315,7 @@ fun RcloneCardsRoot(
                 onShortcut = {
                     onPinShortcut(menuCard)
                     menuCardId = null
-                    toast(context, "Ana ekran kısayolu isteği gönderildi")
+                    toast(context, "Home-screen shortcut request sent")
                 },
                 onDelete = {
                     deleteCardId = menuCard.id
@@ -314,16 +329,16 @@ fun RcloneCardsRoot(
             AlertDialog(
                 onDismissRequest = { deleteCardId = null },
                 containerColor = Surface,
-                title = { Text("Kart silinsin mi?") },
-                text = { Text("${deleteCard.title} kartı ve ayarları silinecek.", color = TextSecondary) },
+                title = { Text("Delete card?") },
+                text = { Text("${deleteCard.title} card and its settings will be deleted.", color = TextSecondary) },
                 confirmButton = {
                     TextButton(onClick = {
                         TaskScheduler.cancel(context, deleteCard.id)
                         CardStore.delete(deleteCard.id)
                         deleteCardId = null
-                    }) { Text("Sil", color = Red) }
+                    }) { Text("Delete", color = Red) }
                 },
-                dismissButton = { TextButton(onClick = { deleteCardId = null }) { Text("Vazgeç") } }
+                dismissButton = { TextButton(onClick = { deleteCardId = null }) { Text("Cancel") } }
             )
         }
     }
@@ -351,9 +366,9 @@ private fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Görev Kartları", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Tasks", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     val active = jobs.values.count { it.status == JobStatus.RUNNING || it.status == JobStatus.PAUSED || it.status == JobStatus.QUEUED }
-                    if (active > 0) Text("$active aktif", color = Green, fontSize = 11.sp)
+                    if (active > 0) Text("$active active", color = Green, fontSize = 11.sp)
                 }
             }
             items(cards, key = { it.id }) { card ->
@@ -376,9 +391,9 @@ private fun HomeScreen(
                         Modifier.fillMaxWidth().padding(top = 80.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Henüz görev kartı yok", color = TextSecondary)
+                        Text("No tasks yet", color = TextSecondary)
                         Spacer(Modifier.height(8.dp))
-                        Text("Sağ alttaki + ile ilk kartı ekle.", color = TextDim, fontSize = 12.sp)
+                        Text("Use + to add your first task.", color = TextDim, fontSize = 12.sp)
                     }
                 }
             }
@@ -392,7 +407,7 @@ private fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DimActionButton(icon = Icons.Default.Settings, contentDescription = "Ayarlar", onClick = onSettings)
+            DimActionButton(icon = Icons.Default.Settings, contentDescription = "Settings", onClick = onSettings)
             DimActionButton(icon = Icons.Default.Add, contentDescription = "Yeni görev", onClick = onAdd)
         }
     }
@@ -407,7 +422,8 @@ private fun TaskCardItem(
     onLongPress: () -> Unit,
     onRun: () -> Unit
 ) {
-    val accent = accent(card.color)
+    val accent = accent(card)
+    val iconTint = accent.copy(alpha = card.iconAlpha.coerceIn(0.15f, 1f))
     val active = job?.status == JobStatus.RUNNING || job?.status == JobStatus.PAUSED
     val queued = job?.status == JobStatus.QUEUED
     val completed = job?.status == JobStatus.COMPLETED
@@ -417,8 +433,8 @@ private fun TaskCardItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .background(if (active) Color(0xFF101412) else Surface)
-            .border(if (active) 1.5.dp else 1.dp, if (active) accent else Outline, RoundedCornerShape(24.dp))
+            .background(if (active) accent.copy(alpha = 0.055f) else Surface)
+            .border(if (active) 1.5.dp else 1.dp, if (active) accent.copy(alpha = .72f) else Outline, RoundedCornerShape(24.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLongPress)
             .padding(14.dp)
     ) {
@@ -427,91 +443,96 @@ private fun TaskCardItem(
                 modifier = Modifier
                     .size(50.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(accent.copy(alpha = 0.16f))
-                    .border(1.dp, accent.copy(alpha = 0.32f), RoundedCornerShape(16.dp)),
+                    .background(accent.copy(alpha = 0.12f * card.iconAlpha.coerceIn(0.15f, 1f)))
+                    .border(1.dp, accent.copy(alpha = 0.28f * card.iconAlpha.coerceIn(0.15f, 1f)), RoundedCornerShape(16.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(cardIcon(card.icon), null, tint = accent, modifier = Modifier.size(25.dp))
+                Icon(cardIcon(card.icon), null, tint = iconTint, modifier = Modifier.size(25.dp))
             }
 
             Spacer(Modifier.width(12.dp))
 
             Column(Modifier.weight(1f)) {
-                Text(card.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(card.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.width(7.dp))
+                    Text(mainCommand(card.command), color = TextDim, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
                 Text(card.subtitle, color = TextSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    when {
-                        active && job?.status == JobStatus.PAUSED -> "Duraklatıldı"
-                        active -> "${card.actionLabel} · çalışıyor"
-                        queued -> "Sırada"
-                        completed -> "Tamamlandı"
-                        error -> job?.lastError?.take(55) ?: "Hata"
-                        else -> card.actionLabel
-                    },
-                    color = when {
-                        completed -> Green
-                        error -> Red
-                        active || queued -> accent
-                        else -> TextDim
-                    },
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (queued || completed || error || job?.status == JobStatus.PAUSED) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        when {
+                            job?.status == JobStatus.PAUSED -> "Paused"
+                            queued -> "Queued"
+                            completed -> "Completed"
+                            error -> job?.lastError?.take(55) ?: "Error"
+                            else -> ""
+                        },
+                        color = when {
+                            completed -> Green
+                            error -> Red
+                            queued -> accent
+                            else -> Amber
+                        },
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Spacer(Modifier.width(8.dp))
 
             when {
-                active -> {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
-                        CircularProgressIndicator(
-                            progress = (job?.progressPercent ?: 0) / 100f,
-                            modifier = Modifier.size(46.dp),
-                            color = accent,
-                            trackColor = Color(0xFF29292E),
-                            strokeWidth = 3.dp
-                        )
-                        Text("%${job?.progressPercent ?: 0}", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
+                active -> Box(
+                    Modifier.size(32.dp).clip(CircleShape).background(accent.copy(alpha = .12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (job?.status == JobStatus.PAUSED) Amber else accent))
                 }
-                completed -> Icon(Icons.Default.DoneAll, null, tint = Green, modifier = Modifier.size(28.dp))
-                error -> Icon(Icons.Default.ErrorOutline, null, tint = Red, modifier = Modifier.size(28.dp))
-                else -> {
-                    IconButton(
-                        onClick = onRun,
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(accent.copy(alpha = 0.14f))
-                    ) {
-                        Icon(Icons.Default.PlayArrow, "Çalıştır", tint = accent)
-                    }
+                completed -> Icon(Icons.Default.DoneAll, null, tint = Green, modifier = Modifier.size(27.dp))
+                error -> Icon(Icons.Default.ErrorOutline, null, tint = Red, modifier = Modifier.size(27.dp))
+                else -> IconButton(
+                    onClick = onRun,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(accent.copy(alpha = 0.13f))
+                ) {
+                    Icon(Icons.Default.PlayArrow, "Run", tint = accent)
                 }
             }
         }
 
+        Spacer(Modifier.height(10.dp))
+
         if (active && job != null) {
-            Spacer(Modifier.height(12.dp))
-            LinearProgressIndicator(
-                progress = job.progressPercent / 100f,
-                modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
-                color = accent,
-                trackColor = Color(0xFF29292E)
-            )
-            Spacer(Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                LinearProgressIndicator(
+                    progress = job.progressPercent / 100f,
+                    modifier = Modifier.weight(1f).height(7.dp).clip(CircleShape),
+                    color = accent,
+                    trackColor = Color(0xFF252529)
+                )
+                Spacer(Modifier.width(11.dp))
+                Text("${job.progressPercent}%", color = accent, fontSize = 17.sp, fontWeight = FontWeight.Black)
+            }
+            Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${formatBytes(job.bytes)} / ${formatBytes(job.totalBytes)}", color = TextSecondary, fontSize = 10.sp)
-                Text("${formatSpeed(job.speedBytesPerSecond)}  ·  ${formatEta(job.etaSeconds)}", color = TextSecondary, fontSize = 10.sp)
+                Text(
+                    if (job.totalBytes > 0) "${formatBytes(job.bytes)} / ${formatBytes(job.totalBytes)}" else formatBytes(job.bytes),
+                    color = TextSecondary,
+                    fontSize = 10.5.sp
+                )
+                Text("${formatSpeed(job.speedBytesPerSecond)} · ${formatEta(job.etaSeconds)}", color = TextSecondary, fontSize = 10.5.sp)
             }
         } else {
-            Spacer(Modifier.height(10.dp))
             Text(
                 commandSummary(card.command),
                 color = TextDim,
                 fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
+                fontSize = 10.5.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -519,20 +540,17 @@ private fun TaskCardItem(
     }
 }
 
+
 @Composable
 private fun DimActionButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier
-            .size(50.dp)
-            .alpha(0.72f)
-            .clip(RoundedCornerShape(17.dp))
-            .background(Color(0xFF101012))
-            .border(1.dp, Outline, RoundedCornerShape(17.dp))
+        modifier = Modifier.size(48.dp).alpha(0.55f)
     ) {
-        Icon(icon, contentDescription, tint = TextSecondary, modifier = Modifier.size(23.dp))
+        Icon(icon, contentDescription, tint = TextSecondary, modifier = Modifier.size(25.dp))
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -547,6 +565,7 @@ private fun CardMenuSheet(
     onShortcut: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val cardAccent = accent(card)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF121214),
@@ -557,36 +576,39 @@ private fun CardMenuSheet(
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp).navigationBarsPadding()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)) {
                 Box(
-                    Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(accent(card.color).copy(alpha = .16f)),
+                    Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(cardAccent.copy(alpha = .15f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(cardIcon(card.icon), null, tint = accent(card.color), modifier = Modifier.size(20.dp))
+                    Icon(cardIcon(card.icon), null, tint = cardAccent.copy(alpha = card.iconAlpha), modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(card.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(card.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Spacer(Modifier.width(7.dp))
+                        Text(mainCommand(card.command), color = TextDim, fontSize = 10.sp)
+                    }
                     Text(card.subtitle, color = TextSecondary, fontSize = 11.sp)
                 }
-                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Kapat", tint = TextSecondary) }
+                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close", tint = TextSecondary) }
             }
             HorizontalDivider(color = Outline)
             Spacer(Modifier.height(6.dp))
-            MenuRow(Icons.Default.PlayArrow, "Çalıştır", accent(card.color), onRun)
-            MenuRow(Icons.Default.Edit, "Düzenle", TextSecondary, onEdit)
-            MenuRow(Icons.Default.ContentCopy, "Kopyala", TextSecondary, onCopy)
-            MenuRow(Icons.Default.Edit, "Yeniden Adlandır", TextSecondary, onEdit)
-            MenuRow(Icons.Default.Settings, "Renk / Simge Değiştir", Purple, onEdit)
-            MenuRow(Icons.Default.PlaylistAdd, "Sıraya Ekle", Cyan, onQueue)
-            MenuRow(Icons.Default.Schedule, "Zamanlayıcı", Amber, onEdit)
-            MenuRow(Icons.Default.AddToHomeScreen, "Kısayol Oluştur", TextSecondary, onShortcut)
+            MenuRow(Icons.Default.PlayArrow, "Run", cardAccent, onRun)
+            MenuRow(Icons.Default.Edit, "Edit Card", TextSecondary, onEdit)
+            MenuRow(Icons.Default.ContentCopy, "Duplicate", TextSecondary, onCopy)
+            MenuRow(Icons.Default.PlaylistAdd, "Add to Queue", Cyan, onQueue)
+            MenuRow(Icons.Default.Schedule, "Schedule", Amber, onEdit)
+            MenuRow(Icons.Default.AddToHomeScreen, "Add to Home Screen", TextSecondary, onShortcut)
             if (job?.status == JobStatus.RUNNING || job?.status == JobStatus.PAUSED) {
-                Text("Aktif işlem sürerken kart silinemez.", color = TextDim, fontSize = 10.sp, modifier = Modifier.padding(14.dp))
+                Text("A running card cannot be deleted.", color = TextDim, fontSize = 10.5.sp, modifier = Modifier.padding(14.dp))
             } else {
-                MenuRow(Icons.Default.Delete, "Sil", Red, onDelete)
+                MenuRow(Icons.Default.Delete, "Delete", Red, onDelete)
             }
         }
     }
 }
+
 
 @Composable
 private fun MenuRow(icon: ImageVector, text: String, tint: Color, onClick: () -> Unit) {
@@ -618,7 +640,10 @@ private fun EditCardScreen(
     var command by remember(card.id) { mutableStateOf(card.command) }
     var workDir by remember(card.id) { mutableStateOf(card.workDir) }
     var color by remember(card.id) { mutableStateOf(card.color) }
+    var customColorHex by remember(card.id) { mutableStateOf(card.customColorHex) }
+    var iconAlpha by remember(card.id) { mutableStateOf(card.iconAlpha.coerceIn(0.15f, 1f)) }
     var icon by remember(card.id) { mutableStateOf(card.icon) }
+    val currentAccent = customAccent(customColorHex) ?: accent(color)
     var transfers by remember(card.id) { mutableStateOf(card.transfers?.toString().orEmpty()) }
     var checkers by remember(card.id) { mutableStateOf(card.checkers?.toString().orEmpty()) }
     var bwlimit by remember(card.id) { mutableStateOf(card.bwlimit) }
@@ -628,7 +653,7 @@ private fun EditCardScreen(
     var minute by remember(card.id) { mutableStateOf((card.scheduleMinute ?: 0).toString().padStart(2, '0')) }
 
     Column(Modifier.fillMaxSize().background(Amoled)) {
-        TopBar(title = "Kartı Düzenle", onBack = onBack, action = {
+        TopBar(title = "Edit Card", onBack = onBack, action = {
             IconButton(onClick = {
                 val h = hour.toIntOrNull()?.coerceIn(0, 23)
                 val m = minute.toIntOrNull()?.coerceIn(0, 59)
@@ -640,6 +665,8 @@ private fun EditCardScreen(
                         command = command.trim(),
                         workDir = workDir.trim().ifBlank { "/storage/emulated/0/" },
                         color = color,
+                        customColorHex = customColorHex.trim(),
+                        iconAlpha = iconAlpha,
                         icon = icon,
                         transfers = transfers.toIntOrNull()?.coerceIn(1, 64),
                         checkers = checkers.toIntOrNull()?.coerceIn(1, 128),
@@ -649,7 +676,7 @@ private fun EditCardScreen(
                         scheduleMinute = if (scheduleEnabled) m else null
                     )
                 )
-            }) { Icon(Icons.Default.Check, "Kaydet", tint = Green) }
+            }) { Icon(Icons.Default.Check, "Save", tint = Green) }
         })
 
         Column(
@@ -658,31 +685,31 @@ private fun EditCardScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(62.dp).clip(RoundedCornerShape(19.dp)).background(accent(color).copy(alpha = .18f)).border(1.dp, accent(color).copy(alpha = .45f), RoundedCornerShape(19.dp)),
+                    Modifier.size(62.dp).clip(RoundedCornerShape(19.dp)).background(currentAccent.copy(alpha = .18f)).border(1.dp, currentAccent.copy(alpha = .45f), RoundedCornerShape(19.dp)),
                     contentAlignment = Alignment.Center
-                ) { Icon(cardIcon(icon), null, tint = accent(color), modifier = Modifier.size(30.dp)) }
+                ) { Icon(cardIcon(icon), null, tint = currentAccent.copy(alpha = iconAlpha), modifier = Modifier.size(30.dp)) }
                 Spacer(Modifier.width(12.dp))
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Kart Adı") },
+                    label = { Text("Card name") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     colors = darkTextFieldColors()
                 )
             }
 
-            OutlinedTextField(value = subtitle, onValueChange = { subtitle = it }, label = { Text("Alt Başlık") }, modifier = Modifier.fillMaxWidth(), colors = darkTextFieldColors())
-            OutlinedTextField(value = actionLabel, onValueChange = { actionLabel = it }, label = { Text("İşlem adı") }, modifier = Modifier.fillMaxWidth(), colors = darkTextFieldColors())
+            OutlinedTextField(value = subtitle, onValueChange = { subtitle = it }, label = { Text("Subtitle") }, modifier = Modifier.fillMaxWidth(), colors = darkTextFieldColors())
+            OutlinedTextField(value = actionLabel, onValueChange = { actionLabel = it }, label = { Text("Action label") }, modifier = Modifier.fillMaxWidth(), colors = darkTextFieldColors())
 
-            SectionLabel("Simge")
+            SectionLabel("Icon")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CardIcon.entries.forEach { candidate ->
-                    IconChoice(candidate, selected = icon == candidate, accent = accent(color)) { icon = candidate }
+                    IconChoice(candidate, selected = icon == candidate, accent = currentAccent) { icon = candidate }
                 }
             }
 
-            SectionLabel("Renk")
+            SectionLabel("Color")
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CardColor.entries.forEach { candidate ->
                     val c = accent(candidate)
@@ -692,14 +719,31 @@ private fun EditCardScreen(
                             .clip(CircleShape)
                             .background(c)
                             .border(if (color == candidate) 3.dp else 0.dp, if (color == candidate) Color.White else Color.Transparent, CircleShape)
-                            .combinedClickable(onClick = { color = candidate })
+                            .combinedClickable(onClick = { color = candidate; customColorHex = "" })
                     )
                 }
             }
 
-            SectionLabel("Çalıştırılacak Komut")
+            OutlinedTextField(
+                value = customColorHex,
+                onValueChange = { value -> customColorHex = value.take(7) },
+                label = { Text("Custom color (#RRGGBB)") },
+                placeholder = { Text("#06B6D4") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = darkTextFieldColors()
+            )
+            Text("Icon opacity ${(iconAlpha * 100).toInt()}%", color = TextSecondary, fontSize = 11.sp)
+            Slider(
+                value = iconAlpha,
+                onValueChange = { iconAlpha = it },
+                valueRange = 0.15f..1f,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            SectionLabel("Command")
             Text(
-                "Komutu normal Termux biçiminde yaz. Tırnaklı yollar ve tüm rclone alt komutları desteklenir.",
+                "Enter a normal rclone command. Quoted paths and Termux-style shared-storage paths are supported.",
                 color = TextDim,
                 fontSize = 10.sp
             )
@@ -718,7 +762,7 @@ private fun EditCardScreen(
                 modifier = Modifier.fillMaxWidth(),
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 colors = darkTextFieldColors(),
-                label = { Text("Çalışma klasörü") }
+                label = { Text("Working directory") }
             )
 
             OutlinedButton(
@@ -727,11 +771,11 @@ private fun EditCardScreen(
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Text(if (advancedExpanded) "Gelişmiş Seçenekleri Gizle" else "Gelişmiş Seçenekler")
+                Text(if (advancedExpanded) "Hide Advanced Options" else "Advanced Options")
             }
             if (advancedExpanded) {
                 Text(
-                    "Boş bırakırsan Ayarlar’daki varsayılan değer kullanılır. Komutun içinde aynı bayrak varsa komut değeri önceliklidir.",
+                    "If left blank, the app default is used. A value written directly in the command always takes priority.",
                     color = TextDim,
                     fontSize = 10.sp
                 )
@@ -756,17 +800,17 @@ private fun EditCardScreen(
                 OutlinedTextField(
                     value = bwlimit,
                     onValueChange = { bwlimit = it },
-                    label = { Text("Bandwidth sınırı (--bwlimit), örn. 10M") },
+                    label = { Text("Bandwidth limit (--bwlimit), e.g. 10M") },
                     modifier = Modifier.fillMaxWidth(),
                     colors = darkTextFieldColors()
                 )
             }
 
-            SectionLabel("Zamanlayıcı")
+            SectionLabel("Schedule")
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text("Her gün otomatik çalıştır", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text(if (canExactAlarm) "Kesin alarm izni hazır" else "Kesin alarm izni yok; saat yaklaşık olabilir", color = TextDim, fontSize = 10.sp)
+                    Text("Run automatically every day", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (canExactAlarm) "Exact alarm permission ready" else "Exact alarm permission unavailable; timing may be approximate", color = TextDim, fontSize = 10.sp)
                 }
                 Switch(checked = scheduleEnabled, onCheckedChange = {
                     scheduleEnabled = it
@@ -778,7 +822,7 @@ private fun EditCardScreen(
                     OutlinedTextField(
                         value = hour,
                         onValueChange = { hour = it.filter(Char::isDigit).take(2) },
-                        label = { Text("Saat") },
+                        label = { Text("Hour") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                         colors = darkTextFieldColors()
@@ -786,7 +830,7 @@ private fun EditCardScreen(
                     OutlinedTextField(
                         value = minute,
                         onValueChange = { minute = it.filter(Char::isDigit).take(2) },
-                        label = { Text("Dakika") },
+                        label = { Text("Minute") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                         colors = darkTextFieldColors()
@@ -806,6 +850,8 @@ private fun EditCardScreen(
                             command = command.trim(),
                             workDir = workDir.trim().ifBlank { "/storage/emulated/0/" },
                             color = color,
+                            customColorHex = customColorHex.trim(),
+                            iconAlpha = iconAlpha,
                             icon = icon,
                             transfers = transfers.toIntOrNull()?.coerceIn(1, 64),
                             checkers = checkers.toIntOrNull()?.coerceIn(1, 128),
@@ -822,7 +868,7 @@ private fun EditCardScreen(
             ) {
                 Icon(Icons.Default.Save, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Kaydet", fontWeight = FontWeight.Bold)
+                Text("Save", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -858,8 +904,8 @@ private fun DetailScreen(
     val state = job ?: JobState(cardId = card?.id.orEmpty(), title = card?.title ?: "Görev")
 
     Column(Modifier.fillMaxSize().background(Amoled)) {
-        TopBar(title = card?.let { "${it.title} · ${it.actionLabel}" } ?: "İşlem Detayı", onBack = onBack, action = {
-            IconButton(onClick = onMenu) { Icon(Icons.Default.MoreVert, "Menü", tint = TextSecondary) }
+        TopBar(title = card?.let { "${it.title} · ${it.actionLabel}" } ?: "Task Details", onBack = onBack, action = {
+            IconButton(onClick = onMenu) { Icon(Icons.Default.MoreVert, "Menu", tint = TextSecondary) }
         })
 
         Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -881,10 +927,10 @@ private fun DetailScreen(
             Spacer(Modifier.height(18.dp))
 
             StatRow(Icons.Default.Storage, if (state.totalBytes > 0) "${formatBytes(state.bytes)} / ${formatBytes(state.totalBytes)}" else formatBytes(state.bytes))
-            StatRow(Icons.Default.DoneAll, if (state.totalTransfers > 0) "${state.transfers} / ${state.totalTransfers} dosya" else "${state.transfers} dosya")
+            StatRow(Icons.Default.DoneAll, if (state.totalTransfers > 0) "${state.transfers} / ${state.totalTransfers} files" else "${state.transfers} files")
             StatRow(Icons.Default.Refresh, formatSpeed(state.speedBytesPerSecond))
             StatRow(Icons.Default.Schedule, formatEta(state.etaSeconds))
-            StatRow(Icons.Default.Code, "Geçen süre: ${formatDuration(state.elapsedSeconds.toLong())}")
+            StatRow(Icons.Default.Code, "Elapsed: ${formatDuration(state.elapsedSeconds.toLong())}")
             state.currentFile?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(4.dp))
                 Text(it, color = TextDim, fontFamily = FontFamily.Monospace, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -895,7 +941,7 @@ private fun DetailScreen(
             }
 
             Spacer(Modifier.height(14.dp))
-            Text("CANLI LOG", color = TextDim, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("LIVE LOG", color = TextDim, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             LazyColumn(
                 modifier = Modifier
@@ -917,29 +963,29 @@ private fun DetailScreen(
                 JobStatus.RUNNING -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Red)) {
                         Icon(Icons.Default.Stop, null)
-                        Spacer(Modifier.width(6.dp)); Text("Durdur")
+                        Spacer(Modifier.width(6.dp)); Text("Stop")
                     }
                     Button(onClick = onPause, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = Surface2)) {
                         Icon(Icons.Default.Pause, null)
-                        Spacer(Modifier.width(6.dp)); Text("Duraklat")
+                        Spacer(Modifier.width(6.dp)); Text("Pause")
                     }
                 }
                 JobStatus.PAUSED -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Red)) {
-                        Icon(Icons.Default.Stop, null); Spacer(Modifier.width(6.dp)); Text("Durdur")
+                        Icon(Icons.Default.Stop, null); Spacer(Modifier.width(6.dp)); Text("Stop")
                     }
                     Button(onClick = onResume, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black)) {
-                        Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Devam")
+                        Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Resume")
                     }
                 }
                 JobStatus.QUEUED -> OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Red)) {
-                    Icon(Icons.Default.Close, null); Spacer(Modifier.width(6.dp)); Text("Kuyruktan Çıkar")
+                    Icon(Icons.Default.Close, null); Spacer(Modifier.width(6.dp)); Text("Remove from Queue")
                 }
                 else -> Button(onClick = onRun, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.Black)) {
-                    Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Tekrar Çalıştır", fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Run Again", fontWeight = FontWeight.Bold)
                 }
             }
-            TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Arka Planda Çalış", color = TextSecondary) }
+            TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Run in Background", color = TextSecondary) }
         }
     }
 }
@@ -958,6 +1004,7 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     onImportConfig: () -> Unit,
     onExportConfig: () -> Unit,
+    onConnectGoogleDrive: (String, String, String) -> Unit,
     onImportCards: () -> Unit,
     onExportCards: () -> Unit,
     onRequestAllFiles: () -> Unit,
@@ -984,7 +1031,7 @@ private fun SettingsScreen(
     val defaultCheckers by AppSettings.defaultCheckers.collectAsState()
     val notifyOnCompletion by AppSettings.notifyOnCompletion.collectAsState()
 
-    var rcloneVersion by remember { mutableStateOf("Kontrol ediliyor...") }
+    var rcloneVersion by remember { mutableStateOf("Checking...") }
     var remotes by remember { mutableStateOf<List<String>>(emptyList()) }
     var remotesDialog by remember { mutableStateOf(false) }
     var configDialog by remember { mutableStateOf(false) }
@@ -992,6 +1039,11 @@ private fun SettingsScreen(
     var resetCardsDialog by remember { mutableStateOf(false) }
     var defaultsDialog by remember { mutableStateOf(false) }
     var clearDataDialog by remember { mutableStateOf(false) }
+    var driveConnectDialog by remember { mutableStateOf(false) }
+    var driveRemoteName by remember { mutableStateOf("gdrive") }
+    var driveClientId by remember { mutableStateOf("") }
+    var driveClientSecret by remember { mutableStateOf("") }
+    var aboutDialog by remember { mutableStateOf(false) }
     var defaultsTransfersText by remember { mutableStateOf(defaultTransfers.toString()) }
     var defaultsCheckersText by remember { mutableStateOf(defaultCheckers.toString()) }
 
@@ -1000,36 +1052,37 @@ private fun SettingsScreen(
     }
 
     Column(Modifier.fillMaxSize().background(Amoled)) {
-        TopBar(title = "Ayarlar", onBack = onBack)
+        TopBar(title = "Settings", onBack = onBack)
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             SettingsGroup("Rclone") {
-                SettingsRow(Icons.Default.FileOpen, "rclone.conf", "İçe aktar", onClick = onImportConfig)
-                SettingsRow(Icons.Default.FileDownload, "rclone.conf", "Dışa aktar", onClick = onExportConfig)
-                SettingsRow(Icons.Default.Code, "rclone.conf düzenle", "Uygulama içindeki yapılandırma", onClick = {
+                SettingsRow(Icons.Default.Cloud, "Connect Google Drive", "Open Google sign-in in your browser", onClick = { driveConnectDialog = true })
+                SettingsRow(Icons.Default.FileOpen, "rclone.conf", "Import", onClick = onImportConfig)
+                SettingsRow(Icons.Default.FileDownload, "rclone.conf", "Export", onClick = onExportConfig)
+                SettingsRow(Icons.Default.Code, "Edit rclone.conf", "Configuration stored inside the app", onClick = {
                     configText = ConfigManager.readText()
                     configDialog = true
                 })
-                SettingsRow(Icons.Default.Cloud, "Remote’ları Yönet", "Bağlı servisleri gör / config üzerinden düzenle", onClick = {
+                SettingsRow(Icons.Default.Cloud, "Manage Remotes", "View connected remotes / edit config", onClick = {
                     remotesDialog = true
                 })
-                SettingsRow(Icons.Default.Code, "Rclone Sürümü", rcloneVersion)
+                SettingsRow(Icons.Default.Code, "Rclone Version", rcloneVersion)
             }
 
-            SettingsGroup("Uygulama") {
-                SettingsRow(Icons.Default.Security, "Tema", "AMOLED saf siyah")
+            SettingsGroup("App") {
+                SettingsRow(Icons.Default.Security, "Theme", "Pure AMOLED black")
                 SettingsRow(
                     Icons.Default.Notifications,
-                    "Tamamlanma Bildirimi",
-                    if (notifyOnCompletion) "Açık · işlem bitince sonuç bildir" else "Kapalı",
+                    "Completion Notification",
+                    if (notifyOnCompletion) "On · notify when a task finishes" else "Off",
                     valueColor = if (notifyOnCompletion) Green else TextDim,
                     onClick = { AppSettings.setNotifyOnCompletion(!notifyOnCompletion) }
                 )
                 SettingsRow(
                     Icons.Default.Settings,
-                    "Varsayılan Seçenekler",
+                    "Default Options",
                     "--transfers=$defaultTransfers, --checkers=$defaultCheckers",
                     onClick = {
                         defaultsTransfersText = defaultTransfers.toString()
@@ -1039,48 +1092,48 @@ private fun SettingsScreen(
                 )
             }
 
-            SettingsGroup("İzinler") {
+            SettingsGroup("Permissions") {
                 SettingsRow(
                     Icons.Default.Storage,
-                    "Tüm dosyalara erişim",
-                    if (storageOk) "Hazır" else "Gerekli: yerel klasörler için",
+                    "All files access",
+                    if (storageOk) "Ready" else "Required for local folders",
                     valueColor = if (storageOk) Green else Amber,
                     onClick = onRequestAllFiles
                 )
                 SettingsRow(
                     Icons.Default.Notifications,
-                    "Bildirimler",
-                    if (notificationOk) "Hazır" else "İşlem durumunu göstermek için izin ver",
+                    "Notifications",
+                    if (notificationOk) "Ready" else "Allow task-status notifications",
                     valueColor = if (notificationOk) Green else Amber,
                     onClick = onRequestNotification
                 )
                 SettingsRow(
                     Icons.Default.Schedule,
-                    "Kesin zamanlayıcı",
-                    if (alarmOk) "Hazır" else "Günlük görevlerin tam saatinde çalışması için",
+                    "Exact scheduling",
+                    if (alarmOk) "Ready" else "For running daily tasks at the exact time",
                     valueColor = if (alarmOk) Green else Amber,
                     onClick = onRequestExactAlarm
                 )
             }
 
-            SettingsGroup("Veri") {
-                SettingsRow(Icons.Default.FileDownload, "Kartları Yedekle", "Tüm görev kartlarını JSON olarak dışa aktar", onClick = onExportCards)
-                SettingsRow(Icons.Default.FileOpen, "Kartları Geri Yükle", "Daha önce alınmış JSON yedeğini içe aktar", onClick = onImportCards)
-                SettingsRow(Icons.Default.Refresh, "Varsayılan Kartları Geri Getir", "Mevcut kart listesini örnek kartlarla değiştir", valueColor = Amber, onClick = {
+            SettingsGroup("Data") {
+                SettingsRow(Icons.Default.FileDownload, "Back Up Cards", "Export all task cards as JSON", onClick = onExportCards)
+                SettingsRow(Icons.Default.FileOpen, "Restore Cards", "Import a previous JSON card backup", onClick = onImportCards)
+                SettingsRow(Icons.Default.Refresh, "Restore Default Cards", "Replace the current list with example cards", valueColor = Amber, onClick = {
                     resetCardsDialog = true
                 })
             }
 
-            SettingsGroup("Diğer") {
-                SettingsRow(Icons.Default.Storage, "Kart verisi", "Yalnızca cihazda saklanır")
-                SettingsRow(Icons.Default.Delete, "Uygulama Verisini Temizle", "Kartlar, config ve uygulama ayarlarını sıfırla", valueColor = Red, onClick = {
+            SettingsGroup("Other") {
+                SettingsRow(Icons.Default.Storage, "Card data", "Stored only on this device")
+                SettingsRow(Icons.Default.Delete, "Clear App Data", "Reset cards, config and app settings", valueColor = Red, onClick = {
                     clearDataDialog = true
                 })
-                SettingsRow(Icons.Default.Code, "Hakkında", "Rclone Cards ${BuildConfig.VERSION_NAME} · gerçek rclone motoru")
+                SettingsRow(Icons.Default.Code, "About", "BlackWare + OpenAI ChatGPT", onClick = { aboutDialog = true })
             }
 
             Text(
-                "Not: Android 11+ sistem kısıtları nedeniyle /Android/data ve /Android/obb klasörleri, ‘tüm dosyalara erişim’ izni olsa bile normal uygulamalara kapalı olabilir.",
+                "Note: Android 11+ may block normal apps from /Android/data and /Android/obb even when All files access is granted.",
                 color = TextDim,
                 fontSize = 10.sp,
                 lineHeight = 14.sp
@@ -1088,14 +1141,108 @@ private fun SettingsScreen(
         }
     }
 
+    if (driveConnectDialog) {
+        AlertDialog(
+            onDismissRequest = { driveConnectDialog = false },
+            containerColor = Surface,
+            title = { Text("Connect Google Drive") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "If this phone already has a working Termux rclone.conf, importing that file is the fastest option and does not require signing in again.",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        "For a new connection, enter your Google OAuth Desktop client ID and secret. The app opens the browser, waits for the localhost OAuth callback, then saves the token into its own rclone.conf.",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                    OutlinedTextField(
+                        value = driveRemoteName,
+                        onValueChange = { driveRemoteName = it.take(40) },
+                        label = { Text("Remote name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = darkTextFieldColors()
+                    )
+                    OutlinedTextField(
+                        value = driveClientId,
+                        onValueChange = { driveClientId = it },
+                        label = { Text("Google OAuth client ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = darkTextFieldColors()
+                    )
+                    OutlinedTextField(
+                        value = driveClientSecret,
+                        onValueChange = { driveClientSecret = it },
+                        label = { Text("Google OAuth client secret") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = darkTextFieldColors()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (driveClientId.isBlank() || driveClientSecret.isBlank()) {
+                        toast(context, "Client ID and client secret are required.")
+                    } else {
+                        onConnectGoogleDrive(
+                            driveRemoteName.ifBlank { "gdrive" },
+                            driveClientId,
+                            driveClientSecret
+                        )
+                        driveConnectDialog = false
+                        toast(context, "Waiting for browser authorization…")
+                    }
+                }) { Text("Connect", color = Green) }
+            },
+            dismissButton = {
+                TextButton(onClick = { driveConnectDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (aboutDialog) {
+        AlertDialog(
+            onDismissRequest = { aboutDialog = false },
+            containerColor = Surface,
+            title = { Text("Rclone Cards") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Created by BlackWare with OpenAI ChatGPT.", color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "A lightweight AMOLED-first Android front end for rclone. Task cards run predefined rclone commands, show live transfer progress, continue through a foreground service, support scheduling, configuration import/export, and card-specific home-screen shortcuts.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                    Text(
+                        "The app is designed for fast personal sync, copy and move workflows without turning rclone into a full file manager.",
+                        color = TextDim,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
+                    Text("Version ${BuildConfig.VERSION_NAME}", color = TextDim, fontSize = 10.5.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { aboutDialog = false }) { Text("Close", color = Green) }
+            }
+        )
+    }
+
     if (defaultsDialog) {
         AlertDialog(
             onDismissRequest = { defaultsDialog = false },
             containerColor = Surface,
-            title = { Text("Varsayılan rclone seçenekleri") },
+            title = { Text("Default rclone options") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Kartın gelişmiş seçenekleri boşsa bu değerler uygulanır. Komut satırında açıkça yazılan değer her zaman önceliklidir.", color = TextSecondary, fontSize = 11.sp)
+                    Text("These values apply when a card leaves its advanced options blank. Values written directly in the command always take priority.", color = TextSecondary, fontSize = 11.sp)
                     OutlinedTextField(
                         value = defaultsTransfersText,
                         onValueChange = { defaultsTransfersText = it.filter(Char::isDigit).take(2) },
@@ -1119,10 +1266,10 @@ private fun SettingsScreen(
                         defaultsCheckersText.toIntOrNull() ?: 8
                     )
                     defaultsDialog = false
-                    toast(context, "Varsayılan rclone seçenekleri kaydedildi")
-                }) { Text("Kaydet", color = Green) }
+                    toast(context, "Default rclone options saved")
+                }) { Text("Save", color = Green) }
             },
-            dismissButton = { TextButton(onClick = { defaultsDialog = false }) { Text("Vazgeç") } }
+            dismissButton = { TextButton(onClick = { defaultsDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -1130,8 +1277,8 @@ private fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { clearDataDialog = false },
             containerColor = Surface,
-            title = { Text("Uygulama verileri sıfırlansın mı?") },
-            text = { Text("Kartlar varsayılana döner, rclone.conf temizlenir ve uygulama ayarları sıfırlanır. Drive’daki veya telefondaki dosyalar silinmez.", color = TextSecondary) },
+            title = { Text("Clear app data?") },
+            text = { Text("Cards return to defaults, rclone.conf is cleared and app settings are reset. Files on Drive or on the phone are not deleted.", color = TextSecondary) },
             confirmButton = {
                 TextButton(onClick = {
                     CardStore.cards.value.forEach { TaskScheduler.cancel(context, it.id) }
@@ -1139,10 +1286,10 @@ private fun SettingsScreen(
                     AppSettings.reset()
                     CardStore.resetDefaults()
                     clearDataDialog = false
-                    toast(context, "Uygulama verileri sıfırlandı")
-                }) { Text("Sıfırla", color = Red) }
+                    toast(context, "App data reset")
+                }) { Text("Reset", color = Red) }
             },
-            dismissButton = { TextButton(onClick = { clearDataDialog = false }) { Text("Vazgeç") } }
+            dismissButton = { TextButton(onClick = { clearDataDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -1164,10 +1311,10 @@ private fun SettingsScreen(
                 TextButton(onClick = {
                     ConfigManager.writeText(configText)
                     configDialog = false
-                    toast(context, "rclone.conf kaydedildi")
-                }) { Text("Kaydet", color = Green) }
+                    toast(context, "rclone.conf saved")
+                }) { Text("Save", color = Green) }
             },
-            dismissButton = { TextButton(onClick = { configDialog = false }) { Text("Vazgeç") } }
+            dismissButton = { TextButton(onClick = { configDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -1178,10 +1325,10 @@ private fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { remotesDialog = false },
             containerColor = Surface,
-            title = { Text("Remote’lar") },
+            title = { Text("Remotes") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (remotes.isEmpty()) Text("Remote bulunamadı veya config henüz içe aktarılmadı.", color = TextSecondary, fontSize = 12.sp)
+                    if (remotes.isEmpty()) Text("No remotes found, or a config has not been imported yet.", color = TextSecondary, fontSize = 12.sp)
                     remotes.forEach { remote ->
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF0A0A0C)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Cloud, null, tint = Cyan, modifier = Modifier.size(18.dp))
@@ -1196,9 +1343,9 @@ private fun SettingsScreen(
                     remotesDialog = false
                     configText = ConfigManager.readText()
                     configDialog = true
-                }) { Text("Config Düzenle", color = Green) }
+                }) { Text("Edit Config", color = Green) }
             },
-            dismissButton = { TextButton(onClick = { remotesDialog = false }) { Text("Kapat") } }
+            dismissButton = { TextButton(onClick = { remotesDialog = false }) { Text("Close") } }
         )
     }
 
@@ -1206,17 +1353,17 @@ private fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { resetCardsDialog = false },
             containerColor = Surface,
-            title = { Text("Varsayılan kartlara dönülsün mü?") },
-            text = { Text("Mevcut görev kartları değiştirilecek. İstersen önce ‘Kartları Yedekle’ ile JSON yedeği al.", color = TextSecondary) },
+            title = { Text("Restore default cards?") },
+            text = { Text("The current task cards will be replaced. Export a card backup first if needed.", color = TextSecondary) },
             confirmButton = {
                 TextButton(onClick = {
                     CardStore.cards.value.forEach { TaskScheduler.cancel(context, it.id) }
                     CardStore.resetDefaults()
                     resetCardsDialog = false
-                    toast(context, "Varsayılan kartlar geri getirildi")
-                }) { Text("Geri Getir", color = Amber) }
+                    toast(context, "Default cards restored")
+                }) { Text("Restore", color = Amber) }
             },
-            dismissButton = { TextButton(onClick = { resetCardsDialog = false }) { Text("Vazgeç") } }
+            dismissButton = { TextButton(onClick = { resetCardsDialog = false }) { Text("Cancel") } }
         )
     }
 }
@@ -1262,7 +1409,7 @@ private fun TopBar(title: String, onBack: () -> Unit, action: (@Composable () ->
         modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri", tint = TextSecondary) }
+        IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back", tint = TextSecondary) }
         Text(title, modifier = Modifier.weight(1f), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (action != null) action() else Spacer(Modifier.size(48.dp))
     }
@@ -1276,8 +1423,8 @@ private fun SectionLabel(text: String) {
 
 @Composable
 private fun darkTextFieldColors() = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-    focusedContainerColor = Color(0xFF0C0C0E),
-    unfocusedContainerColor = Color(0xFF0C0C0E),
+    focusedContainerColor = Color.Black,
+    unfocusedContainerColor = Color.Black,
     focusedBorderColor = Green,
     unfocusedBorderColor = Outline,
     focusedTextColor = TextPrimary,
@@ -1286,6 +1433,30 @@ private fun darkTextFieldColors() = androidx.compose.material3.OutlinedTextField
     unfocusedLabelColor = TextDim,
     cursorColor = Green
 )
+
+private fun customAccent(hex: String): Color? = runCatching {
+    val raw = hex.trim()
+    if (raw.isBlank()) return@runCatching null
+    val normalized = if (raw.startsWith("#")) raw else "#$raw"
+    require(Regex("^#[0-9A-Fa-f]{6}$").matches(normalized))
+    Color(android.graphics.Color.parseColor(normalized))
+}.getOrNull()
+
+private fun accent(card: TaskCard): Color = customAccent(card.customColorHex) ?: accent(card.color)
+
+private fun mainCommand(command: String): String {
+    val tokens = command.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (tokens.isEmpty()) return "command"
+    val rcloneIndex = tokens.indexOfFirst {
+        it.trim('"', '\'').substringAfterLast('/').equals("rclone", ignoreCase = true)
+    }
+    val index = if (rcloneIndex >= 0) rcloneIndex + 1 else 0
+    return tokens.getOrNull(index)
+        ?.trim('"', '\'')
+        ?.lowercase(Locale.US)
+        ?.ifBlank { "command" }
+        ?: "command"
+}
 
 private fun accent(color: CardColor): Color = when (color) {
     CardColor.GREEN -> Green
@@ -1316,13 +1487,13 @@ private fun statusColor(status: JobStatus): Color = when (status) {
 }
 
 private fun statusText(status: JobStatus): String = when (status) {
-    JobStatus.RUNNING -> "Çalışıyor"
-    JobStatus.PAUSED -> "Duraklatıldı"
-    JobStatus.COMPLETED -> "Tamamlandı"
-    JobStatus.ERROR -> "Hata"
-    JobStatus.QUEUED -> "Sırada"
-    JobStatus.STOPPED -> "Durduruldu"
-    JobStatus.IDLE -> "Boşta"
+    JobStatus.RUNNING -> "Running"
+    JobStatus.PAUSED -> "Paused"
+    JobStatus.COMPLETED -> "Completed"
+    JobStatus.ERROR -> "Error"
+    JobStatus.QUEUED -> "Queued"
+    JobStatus.STOPPED -> "Stopped"
+    JobStatus.IDLE -> "Idle"
 }
 
 private fun logColor(line: String): Color = when {
@@ -1346,7 +1517,7 @@ private fun formatSpeed(speed: Double): String = if (speed <= 0.0) "0 B/s" else 
 
 private fun formatEta(seconds: Long?): String {
     if (seconds == null || seconds < 0 || seconds > 365L * 86400L) return "ETA —"
-    return "${formatDuration(seconds)} kaldı"
+    return "${formatDuration(seconds)} remaining"
 }
 
 private fun formatDuration(seconds: Long): String {

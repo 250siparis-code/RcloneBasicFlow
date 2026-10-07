@@ -25,6 +25,17 @@ rm -rf "$SRC"
 git clone --depth 1 --branch "$RCLONE_VERSION" https://github.com/rclone/rclone.git "$SRC"
 mkdir -p "$(dirname "$OUT")"
 
+# RCLONECARDS_MINIMAL_BACKENDS
+cat > "$SRC/backend/all/all.go" <<'RCLONE_BACKENDS'
+// Package all imports only the backends required by RcloneCards.
+package all
+
+import (
+    _ "github.com/rclone/rclone/backend/drive"
+    _ "github.com/rclone/rclone/backend/local"
+)
+RCLONE_BACKENDS
+
 pushd "$SRC" >/dev/null
 VERSION="$(git describe --tags --always 2>/dev/null || echo "$RCLONE_VERSION")-cards"
 

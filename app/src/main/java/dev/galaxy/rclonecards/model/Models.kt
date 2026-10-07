@@ -12,6 +12,8 @@ data class TaskCard(
     val command: String,
     val workDir: String = "/storage/emulated/0/",
     val color: CardColor = CardColor.GREEN,
+    val customColorHex: String = "",
+    val iconAlpha: Float = 1f,
     val icon: CardIcon = CardIcon.PHONE,
     val transfers: Int? = null,
     val checkers: Int? = null,

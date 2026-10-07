@@ -32,9 +32,9 @@ object CardStore {
     fun addBlank(): TaskCard {
         val card = TaskCard(
             id = UUID.randomUUID().toString(),
-            title = "Yeni Görev",
-            subtitle = "Özel Komut",
-            actionLabel = "Çalıştır",
+            title = "New Task",
+            subtitle = "Custom Command",
+            actionLabel = "Run",
             command = "rclone copy \"/storage/emulated/0/Download/\" \"gdrive:Yedek/\" --progress",
             workDir = "/storage/emulated/0/",
             color = CardColor.GREEN,
@@ -62,7 +62,7 @@ object CardStore {
         val source = get(id) ?: return null
         val copy = source.copy(
             id = UUID.randomUUID().toString(),
-            title = source.title + " (Kopya)",
+            title = source.title + " (Copy)",
             scheduleEnabled = false,
             scheduleHour = null,
             scheduleMinute = null
@@ -117,6 +117,8 @@ object CardStore {
                 put("command", card.command)
                 put("workDir", card.workDir)
                 put("color", card.color.name)
+                put("customColorHex", card.customColorHex)
+                put("iconAlpha", card.iconAlpha.toDouble())
                 put("icon", card.icon.name)
                 put("transfers", card.transfers ?: JSONObject.NULL)
                 put("checkers", card.checkers ?: JSONObject.NULL)
@@ -139,12 +141,14 @@ object CardStore {
             add(
                 TaskCard(
                     id = o.optString("id", UUID.randomUUID().toString()),
-                    title = o.optString("title", "Görev"),
+                    title = o.optString("title", "Task"),
                     subtitle = o.optString("subtitle", ""),
-                    actionLabel = o.optString("actionLabel", "Çalıştır"),
+                    actionLabel = o.optString("actionLabel", "Run"),
                     command = o.optString("command", "rclone version"),
                     workDir = o.optString("workDir", "/storage/emulated/0/"),
                     color = runCatching { CardColor.valueOf(o.optString("color", "GREEN")) }.getOrDefault(CardColor.GREEN),
+                    customColorHex = o.optString("customColorHex", ""),
+                    iconAlpha = o.optDouble("iconAlpha", 1.0).toFloat().coerceIn(0.15f, 1f),
                     icon = runCatching { CardIcon.valueOf(o.optString("icon", "PHONE")) }.getOrDefault(CardIcon.PHONE),
                     transfers = if (o.isNull("transfers")) null else o.optInt("transfers").coerceIn(1, 64),
                     checkers = if (o.isNull("checkers")) null else o.optInt("checkers").coerceIn(1, 128),
@@ -161,8 +165,8 @@ object CardStore {
         TaskCard(
             id = "ga34-internal",
             title = "G.A34",
-            subtitle = "Dahili Depolama",
-            actionLabel = "Drive’a Senkronize Et",
+            subtitle = "Internal Storage",
+            actionLabel = "Sync to Drive",
             command = "rclone sync \"/storage/emulated/0/\" \"gdrive:G.A34/Dahili Hafıza/\" --exclude \"/Android/**\" --progress",
             workDir = "/storage/emulated/0/",
             color = CardColor.GREEN,
@@ -170,9 +174,9 @@ object CardStore {
         ),
         TaskCard(
             id = "camera-backup",
-            title = "Kamera",
+            title = "Camera",
             subtitle = "DCIM / Camera",
-            actionLabel = "Drive’a Yedekle",
+            actionLabel = "Back Up to Drive",
             command = "rclone copy \"/storage/emulated/0/DCIM/Camera/\" \"gdrive:G.A34/Dahili Hafıza/DCIM/Camera/\" --progress",
             workDir = "/storage/emulated/0/DCIM/Camera/",
             color = CardColor.PURPLE,
