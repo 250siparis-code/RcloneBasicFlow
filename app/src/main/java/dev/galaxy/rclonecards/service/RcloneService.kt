@@ -44,6 +44,7 @@ class RcloneService : Service() {
     }
 
     private val processes = ConcurrentHashMap<String, Process>()
+    private val processIds = ConcurrentHashMap<String, Int>()
     private val queue = ArrayDeque<String>()
     private val queueLock = Any()
     private val wakeLock: PowerManager.WakeLock by lazy {
@@ -112,7 +113,19 @@ class RcloneService : Service() {
 
         thread(name = "rclone-${card.id}") {
             try {
-                val builder = ProcessBuilder(args)
+                val pidFile = java.io.File(cacheDir, "rclone-$cardId.pid").apply { delete() }
+
+                val shellArgs = mutableListOf(
+                    "/system/bin/sh",
+                    "-c",
+                    "echo \\$\\$ > \"\\$1\"; shift; exec \"\\$@\"",
+                    "rclonecards",
+                    pidFile.absolutePath
+                ).apply {
+                    addAll(args)
+                }
+
+                val builder = ProcessBuilder(shellArgs)
                     .directory(card.workDir.takeIf { it.isNotBlank() }?.let { java.io.File(it) })
                     .redirectErrorStream(false)
 
@@ -125,6 +138,22 @@ class RcloneService : Service() {
                 val process = builder.start()
                 processes[cardId] = process
 
+                var childPid: Int? = null
+                for (attempt in 0 until 40) {
+                    childPid = runCatching {
+                        if (pidFile.exists()) {
+                            pidFile.readText().trim().toIntOrNull()
+                        } else {
+                            null
+                        }
+                    }.getOrNull()
+
+                    if (childPid != null) break
+                    Thread.sleep(25)
+                }
+
+                childPid?.let { processIds[cardId] = it }
+
                 val stdoutThread = streamReader(cardId, process.inputStream.bufferedReader(), "OUT")
                 val stderrThread = streamReader(cardId, process.errorStream.bufferedReader(), "ERR")
 
@@ -132,6 +161,8 @@ class RcloneService : Service() {
                 stdoutThread.join(1500)
                 stderrThread.join(1500)
                 processes.remove(cardId)
+                processIds.remove(cardId)
+                pidFile.delete()
 
                 val previous = JobRepository.get(cardId)
                 if (previous?.status == JobStatus.STOPPED) {
@@ -157,6 +188,7 @@ class RcloneService : Service() {
                 }
             } catch (t: Throwable) {
                 processes.remove(cardId)
+                processIds.remove(cardId)
                 JobRepository.update(cardId) {
                     it.copy(
                         status = JobStatus.ERROR,
@@ -244,9 +276,16 @@ class RcloneService : Service() {
     }
 
     private fun pauseJob(cardId: String) {
-        val process = processes[cardId] ?: return
+        if (!processes.containsKey(cardId)) return
+
+        val pid = processIds[cardId]
+        if (pid == null) {
+            JobRepository.appendLog(cardId, "ERROR  İşlem PID bilgisi bulunamadı")
+            return
+        }
+
         runCatching {
-            Os.kill(process.pid().toInt(), OsConstants.SIGSTOP)
+            Os.kill(pid, OsConstants.SIGSTOP)
             JobRepository.update(cardId) { it.copy(status = JobStatus.PAUSED) }
             JobRepository.appendLog(cardId, "PAUSED  İşlem duraklatıldı")
             updateForeground()
@@ -256,9 +295,16 @@ class RcloneService : Service() {
     }
 
     private fun resumeJob(cardId: String) {
-        val process = processes[cardId] ?: return
+        if (!processes.containsKey(cardId)) return
+
+        val pid = processIds[cardId]
+        if (pid == null) {
+            JobRepository.appendLog(cardId, "ERROR  İşlem PID bilgisi bulunamadı")
+            return
+        }
+
         runCatching {
-            Os.kill(process.pid().toInt(), OsConstants.SIGCONT)
+            Os.kill(pid, OsConstants.SIGCONT)
             JobRepository.update(cardId) { it.copy(status = JobStatus.RUNNING) }
             JobRepository.appendLog(cardId, "INFO  İşlem devam ediyor")
             updateForeground()
@@ -274,8 +320,10 @@ class RcloneService : Service() {
         }
         if (process != null) {
             runCatching {
-                // SIGCONT, duraklatılmış sürecin destroy sinyalini alabilmesi için.
-                Os.kill(process.pid().toInt(), OsConstants.SIGCONT)
+                // Duraklatılmış bir işlemi önce devam ettir ki terminate sinyalini alabilsin.
+                processIds[cardId]?.let { pid ->
+                    Os.kill(pid, OsConstants.SIGCONT)
+                }
             }
             process.destroy()
             thread {
@@ -283,6 +331,7 @@ class RcloneService : Service() {
                 if (process.isAlive) process.destroyForcibly()
             }
         }
+        processIds.remove(cardId)
         synchronized(queueLock) { queue.remove(cardId) }
         JobRepository.appendLog(cardId, "STOP  İşlem kullanıcı tarafından durduruldu")
         updateForeground()
