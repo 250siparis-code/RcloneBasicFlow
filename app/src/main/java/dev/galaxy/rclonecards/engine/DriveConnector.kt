@@ -25,20 +25,18 @@ object DriveConnector {
                 val id = clientId.trim()
                 val secret = clientSecret.trim()
 
-                require(id.isNotBlank()) {
-                    "Google OAuth client ID is required. Import an existing rclone.conf instead, or enter your own Desktop OAuth client ID."
-                }
-                require(secret.isNotBlank()) { "Google OAuth client secret is required." }
-
-                val args = listOf(
+                val args = mutableListOf(
                     RcloneEngine.binary(activity).absolutePath,
                     "authorize",
                     "drive",
                     "--auth-no-open-browser",
-                    "--drive-client-id", id,
-                    "--drive-client-secret", secret,
                     "--drive-scope", "drive"
                 )
+
+                // Blank values intentionally use rclone's built-in OAuth client,
+                // matching the familiar browser flow from `rclone config`.
+                if (id.isNotBlank()) args += listOf("--drive-client-id", id)
+                if (secret.isNotBlank()) args += listOf("--drive-client-secret", secret)
 
                 val process = ProcessBuilder(args)
                     .redirectErrorStream(true)

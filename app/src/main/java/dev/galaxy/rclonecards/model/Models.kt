@@ -14,6 +14,7 @@ data class TaskCard(
     val color: CardColor = CardColor.GREEN,
     val customColorHex: String = "",
     val iconAlpha: Float = 1f,
+    val customIconPath: String = "",
     val icon: CardIcon = CardIcon.PHONE,
     val transfers: Int? = null,
     val checkers: Int? = null,

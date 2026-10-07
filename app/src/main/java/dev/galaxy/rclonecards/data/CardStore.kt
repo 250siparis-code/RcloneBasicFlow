@@ -119,6 +119,7 @@ object CardStore {
                 put("color", card.color.name)
                 put("customColorHex", card.customColorHex)
                 put("iconAlpha", card.iconAlpha.toDouble())
+                put("customIconPath", card.customIconPath)
                 put("icon", card.icon.name)
                 put("transfers", card.transfers ?: JSONObject.NULL)
                 put("checkers", card.checkers ?: JSONObject.NULL)
@@ -149,6 +150,7 @@ object CardStore {
                     color = runCatching { CardColor.valueOf(o.optString("color", "GREEN")) }.getOrDefault(CardColor.GREEN),
                     customColorHex = o.optString("customColorHex", ""),
                     iconAlpha = o.optDouble("iconAlpha", 1.0).toFloat().coerceIn(0.15f, 1f),
+                    customIconPath = o.optString("customIconPath", ""),
                     icon = runCatching { CardIcon.valueOf(o.optString("icon", "PHONE")) }.getOrDefault(CardIcon.PHONE),
                     transfers = if (o.isNull("transfers")) null else o.optInt("transfers").coerceIn(1, 64),
                     checkers = if (o.isNull("checkers")) null else o.optInt("checkers").coerceIn(1, 128),

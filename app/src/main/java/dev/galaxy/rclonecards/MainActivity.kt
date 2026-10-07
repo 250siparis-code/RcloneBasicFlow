@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
+import dev.galaxy.rclonecards.data.FullBackupManager
 import dev.galaxy.rclonecards.engine.DriveConnector
 import dev.galaxy.rclonecards.engine.ShortcutIconFactory
 import dev.galaxy.rclonecards.model.TaskCard
@@ -85,6 +86,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val importFullBackupLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val oldIds = CardStore.cards.value.map { it.id }
+            val result = runCatching {
+                val raw = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: error("Backup file could not be read")
+                FullBackupManager.importJson(this, raw).getOrThrow()
+            }
+            result.onSuccess { count ->
+                oldIds.forEach { TaskScheduler.cancel(this, it) }
+                CardStore.cards.value.forEach { TaskScheduler.apply(this, it.id) }
+                Toast.makeText(this, "$count cards and app settings restored", Toast.LENGTH_LONG).show()
+            }.onFailure { error ->
+                Toast.makeText(this, "Full backup could not be restored: ${error.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private val exportFullBackupLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) {
+            val result = runCatching {
+                contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
+                    it.write(FullBackupManager.exportJson())
+                } ?: error("Backup file could not be written")
+            }
+            Toast.makeText(
+                this,
+                if (result.isSuccess) "Full app backup saved" else "Full backup failed: ${result.exceptionOrNull()?.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,6 +142,8 @@ class MainActivity : ComponentActivity() {
                     },
                     onImportCards = { importCardsLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                     onExportCards = { exportCardsLauncher.launch("rclone-cards-backup.json") },
+                    onImportFullBackup = { importFullBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                    onExportFullBackup = { exportFullBackupLauncher.launch("rclone-cards-full-backup.json") },
                     onRequestAllFiles = { requestAllFilesAccess() },
                     onRequestNotification = { requestNotificationPermission() },
                     onRequestExactAlarm = { requestExactAlarmPermission() },

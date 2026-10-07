@@ -22,7 +22,7 @@ object RcloneEngine {
         bwlimitOverride: String = ""
     ): List<String> {
         val parsed = ShellWords.parse(rawCommand.trim())
-        require(parsed.isNotEmpty()) { "Komut boş" }
+        require(parsed.isNotEmpty()) { "Command is empty" }
 
         val userArgs = parsed.toMutableList()
         if (userArgs.firstOrNull()?.substringAfterLast('/')?.equals("rclone", ignoreCase = true) == true) {
@@ -85,7 +85,7 @@ object RcloneEngine {
         if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             process.destroyForcibly()
             readerThread.join(1000)
-            error("rclone zaman aşımına uğradı")
+            error("rclone timed out")
         }
         readerThread.join(1000)
         val text = output.toString().trim()
@@ -94,7 +94,7 @@ object RcloneEngine {
     }
 
     fun version(context: Context): String = runQuick(context, listOf("version"), 10)
-        .getOrElse { "Rclone bulunamadı" }
+        .getOrElse { "Rclone not found" }
         .lineSequence().firstOrNull().orEmpty()
 
     fun listRemotes(context: Context): List<String> {

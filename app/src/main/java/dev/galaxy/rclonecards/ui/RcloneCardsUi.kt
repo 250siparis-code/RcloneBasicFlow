@@ -4,9 +4,11 @@ package dev.galaxy.rclonecards.ui
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -114,6 +116,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -136,8 +140,8 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 private val Amoled = Color.Black
-private val Surface = Color(0xFF111113)
-private val Surface2 = Color(0xFF161619)
+private val Surface = Color.Black
+private val Surface2 = Color.Black
 private val Outline = Color(0xFF232328)
 private val TextPrimary = Color(0xFFF3F4F6)
 private val TextSecondary = Color(0xFFA1A1AA)
@@ -162,7 +166,7 @@ fun RcloneCardsTheme(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalDensity provides Density(
             density = density.density,
-            fontScale = density.fontScale * 1.08f
+            fontScale = density.fontScale * 1.18f
         )
     ) {
         MaterialTheme(
@@ -191,6 +195,8 @@ fun RcloneCardsRoot(
     onConnectGoogleDrive: (String, String, String) -> Unit,
     onImportCards: () -> Unit,
     onExportCards: () -> Unit,
+    onImportFullBackup: () -> Unit,
+    onExportFullBackup: () -> Unit,
     onRequestAllFiles: () -> Unit,
     onRequestNotification: () -> Unit,
     onRequestExactAlarm: () -> Unit,
@@ -233,7 +239,6 @@ fun RcloneCardsRoot(
                     } else {
                         if (!hasNotificationPermission()) onRequestNotification()
                         sendService(context, RcloneService.ACTION_START, card.id)
-                        screen = Screen.Detail(card.id)
                     }
                 },
                 onOpenDetail = { screen = Screen.Detail(it.id) },
@@ -282,6 +287,8 @@ fun RcloneCardsRoot(
                 onConnectGoogleDrive = onConnectGoogleDrive,
                 onImportCards = onImportCards,
                 onExportCards = onExportCards,
+                onImportFullBackup = onImportFullBackup,
+                onExportFullBackup = onExportFullBackup,
                 onRequestAllFiles = onRequestAllFiles,
                 onRequestNotification = onRequestNotification,
                 onRequestExactAlarm = onRequestExactAlarm,
@@ -300,7 +307,6 @@ fun RcloneCardsRoot(
                 onRun = {
                     sendService(context, RcloneService.ACTION_START, menuCard.id)
                     menuCardId = null
-                    screen = Screen.Detail(menuCard.id)
                 },
                 onEdit = {
                     menuCardId = null
@@ -331,7 +337,7 @@ fun RcloneCardsRoot(
         if (deleteCard != null) {
             AlertDialog(
                 onDismissRequest = { deleteCardId = null },
-                containerColor = Surface,
+                containerColor = Amoled,
                 title = { Text("Delete card?") },
                 text = { Text("${deleteCard.title} card and its settings will be deleted.", color = TextSecondary) },
                 confirmButton = {
@@ -360,7 +366,12 @@ private fun HomeScreen(
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 94.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 14.dp,
+                end = 14.dp,
+                top = 12.dp,
+                bottom = 94.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
@@ -369,25 +380,27 @@ private fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Tasks", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    val active = jobs.values.count { it.status == JobStatus.RUNNING || it.status == JobStatus.PAUSED || it.status == JobStatus.QUEUED }
-                    if (active > 0) Text("$active active", color = Green, fontSize = 11.sp)
+                    Text("Tasks", color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    val active = jobs.values.count {
+                        it.status == JobStatus.RUNNING ||
+                            it.status == JobStatus.PAUSED ||
+                            it.status == JobStatus.QUEUED
+                    }
+                    if (active > 0) Text("$active active", color = Green, fontSize = 12.sp)
                 }
             }
+
             items(cards, key = { it.id }) { card ->
-                val job = jobs[card.id]
                 TaskCardItem(
                     card = card,
-                    job = job,
-                    onClick = {
-                        if (job?.status == JobStatus.RUNNING || job?.status == JobStatus.PAUSED || job?.status == JobStatus.QUEUED) {
-                            onOpenDetail(card)
-                        } else onRun(card)
-                    },
+                    job = jobs[card.id],
+                    onDoubleClick = { onOpenDetail(card) },
                     onLongPress = { onLongPress(card) },
+                    onMenu = { onLongPress(card) },
                     onRun = { onRun(card) }
                 )
             }
+
             if (cards.isEmpty()) {
                 item {
                     Column(
@@ -396,7 +409,7 @@ private fun HomeScreen(
                     ) {
                         Text("No tasks yet", color = TextSecondary)
                         Spacer(Modifier.height(8.dp))
-                        Text("Use + to add your first task.", color = TextDim, fontSize = 12.sp)
+                        Text("Use + to add your first task.", color = TextDim, fontSize = 13.sp)
                     }
                 }
             }
@@ -404,14 +417,21 @@ private fun HomeScreen(
 
         Row(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .align(Alignment.BottomStart)
+                .padding(start = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DimActionButton(icon = Icons.Default.Settings, contentDescription = "Settings", onClick = onSettings)
-            DimActionButton(icon = Icons.Default.Add, contentDescription = "Yeni görev", onClick = onAdd)
+            DimActionButton(
+                icon = Icons.Default.Settings,
+                contentDescription = "Settings",
+                onClick = onSettings
+            )
+            Spacer(Modifier.width(4.dp))
+            DimActionButton(
+                icon = Icons.Default.Add,
+                contentDescription = "Add task",
+                onClick = onAdd
+            )
         }
     }
 }
@@ -421,8 +441,9 @@ private fun HomeScreen(
 private fun TaskCardItem(
     card: TaskCard,
     job: JobState?,
-    onClick: () -> Unit,
+    onDoubleClick: () -> Unit,
     onLongPress: () -> Unit,
+    onMenu: () -> Unit,
     onRun: () -> Unit
 ) {
     val accent = accent(card)
@@ -436,34 +457,74 @@ private fun TaskCardItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .background(if (active) accent.copy(alpha = 0.055f) else Surface)
-            .border(if (active) 1.5.dp else 1.dp, if (active) accent.copy(alpha = .72f) else Outline, RoundedCornerShape(24.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress)
+            .background(Amoled)
+            .border(
+                if (active) 1.5.dp else 1.dp,
+                if (active) accent.copy(alpha = .72f) else Outline,
+                RoundedCornerShape(24.dp)
+            )
+            .combinedClickable(
+                onClick = { },
+                onDoubleClick = onDoubleClick,
+                onLongClick = onLongPress
+            )
             .padding(14.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
-                    .size(50.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(accent.copy(alpha = 0.12f * card.iconAlpha.coerceIn(0.15f, 1f)))
-                    .border(1.dp, accent.copy(alpha = 0.28f * card.iconAlpha.coerceIn(0.15f, 1f)), RoundedCornerShape(16.dp)),
+                    .width(54.dp)
+                    .height(72.dp)
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(accent.copy(alpha = 0.10f * card.iconAlpha.coerceIn(0.15f, 1f)))
+                    .border(
+                        1.dp,
+                        accent.copy(alpha = 0.28f * card.iconAlpha.coerceIn(0.15f, 1f)),
+                        RoundedCornerShape(17.dp)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(cardIcon(card.icon), null, tint = iconTint, modifier = Modifier.size(25.dp))
+                CardIconGraphic(
+                    customIconPath = card.customIconPath,
+                    icon = card.icon,
+                    tint = iconTint,
+                    modifier = Modifier.size(30.dp)
+                )
             }
 
             Spacer(Modifier.width(12.dp))
 
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(card.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        card.title,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     Spacer(Modifier.width(7.dp))
-                    Text(mainCommand(card.command), color = TextDim, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(
+                        mainCommand(card.command),
+                        color = TextDim,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
                 }
-                Text(card.subtitle, color = TextSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    card.subtitle,
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
                 if (queued || completed || error || job?.status == JobStatus.PAUSED) {
-                    Spacer(Modifier.height(3.dp))
+                    Spacer(Modifier.height(5.dp))
                     Text(
                         when {
                             job?.status == JobStatus.PAUSED -> "Paused"
@@ -478,32 +539,59 @@ private fun TaskCardItem(
                             queued -> accent
                             else -> Amber
                         },
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
 
-            when {
-                active -> Box(
-                    Modifier.size(32.dp).clip(CircleShape).background(accent.copy(alpha = .12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (job?.status == JobStatus.PAUSED) Amber else accent))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                when {
+                    active -> Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(15.dp))
+                            .background(iconTint.copy(alpha = .12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(if (job?.status == JobStatus.PAUSED) Amber else iconTint)
+                        )
+                    }
+
+                    completed -> Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.DoneAll, null, tint = Green, modifier = Modifier.size(28.dp))
+                    }
+
+                    error -> IconButton(
+                        onClick = onRun,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, "Run again", tint = iconTint, modifier = Modifier.size(29.dp))
+                    }
+
+                    else -> IconButton(
+                        onClick = onRun,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(15.dp))
+                            .background(iconTint.copy(alpha = 0.12f))
+                    ) {
+                        Icon(Icons.Default.PlayArrow, "Run", tint = iconTint, modifier = Modifier.size(29.dp))
+                    }
                 }
-                completed -> Icon(Icons.Default.DoneAll, null, tint = Green, modifier = Modifier.size(27.dp))
-                error -> Icon(Icons.Default.ErrorOutline, null, tint = Red, modifier = Modifier.size(27.dp))
-                else -> IconButton(
-                    onClick = onRun,
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(accent.copy(alpha = 0.13f))
+
+                IconButton(
+                    onClick = onMenu,
+                    modifier = Modifier.size(32.dp).alpha(.55f)
                 ) {
-                    Icon(Icons.Default.PlayArrow, "Run", tint = accent)
+                    Icon(Icons.Default.MoreVert, "Task menu", tint = TextSecondary, modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -514,28 +602,41 @@ private fun TaskCardItem(
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 LinearProgressIndicator(
                     progress = job.progressPercent / 100f,
-                    modifier = Modifier.weight(1f).height(7.dp).clip(CircleShape),
+                    modifier = Modifier.weight(1f).height(8.dp).clip(CircleShape),
                     color = accent,
-                    trackColor = Color(0xFF252529)
+                    trackColor = Color(0xFF202024)
                 )
                 Spacer(Modifier.width(11.dp))
-                Text("${job.progressPercent}%", color = accent, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                Text(
+                    "${job.progressPercent}%",
+                    color = accent,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Black
+                )
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(7.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    if (job.totalBytes > 0) "${formatBytes(job.bytes)} / ${formatBytes(job.totalBytes)}" else formatBytes(job.bytes),
+                    if (job.totalBytes > 0) {
+                        "${formatBytes(job.bytes)} / ${formatBytes(job.totalBytes)}"
+                    } else {
+                        formatBytes(job.bytes)
+                    },
                     color = TextSecondary,
-                    fontSize = 10.5.sp
+                    fontSize = 11.5.sp
                 )
-                Text("${formatSpeed(job.speedBytesPerSecond)} · ${formatEta(job.etaSeconds)}", color = TextSecondary, fontSize = 10.5.sp)
+                Text(
+                    "${formatSpeed(job.speedBytesPerSecond)} · ${formatEta(job.etaSeconds)}",
+                    color = TextSecondary,
+                    fontSize = 11.5.sp
+                )
             }
         } else {
             Text(
                 commandSummary(card.command),
                 color = TextDim,
                 fontFamily = FontFamily.Monospace,
-                fontSize = 10.5.sp,
+                fontSize = 11.5.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -543,19 +644,20 @@ private fun TaskCardItem(
     }
 }
 
-
 @Composable
-private fun DimActionButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
+private fun DimActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(48.dp).alpha(0.55f)
+        modifier = Modifier.size(48.dp).alpha(0.58f)
     ) {
-        Icon(icon, contentDescription, tint = TextSecondary, modifier = Modifier.size(25.dp))
+        Icon(icon, contentDescription, tint = TextSecondary, modifier = Modifier.size(26.dp))
     }
 }
 
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CardMenuSheet(
     card: TaskCard,
@@ -569,63 +671,172 @@ private fun CardMenuSheet(
     onDelete: () -> Unit
 ) {
     val cardAccent = accent(card)
-    ModalBottomSheet(
+    val running = job?.status == JobStatus.RUNNING || job?.status == JobStatus.PAUSED
+
+    Popup(
+        alignment = Alignment.BottomCenter,
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF121214),
-        contentColor = TextPrimary,
-        dragHandle = null,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp).navigationBarsPadding()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 14.dp)
+                .navigationBarsPadding()
+                .clip(RoundedCornerShape(24.dp))
+                .background(Amoled)
+                .border(1.dp, Outline, RoundedCornerShape(24.dp))
+                .padding(14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
                 Box(
-                    Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(cardAccent.copy(alpha = .15f)),
+                    Modifier
+                        .width(46.dp)
+                        .height(60.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(cardAccent.copy(alpha = .10f))
+                        .border(1.dp, cardAccent.copy(alpha = .26f), RoundedCornerShape(15.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(cardIcon(card.icon), null, tint = cardAccent.copy(alpha = card.iconAlpha), modifier = Modifier.size(20.dp))
+                    CardIconGraphic(
+                        customIconPath = card.customIconPath,
+                        icon = card.icon,
+                        tint = cardAccent.copy(alpha = card.iconAlpha),
+                        modifier = Modifier.size(26.dp)
+                    )
                 }
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(card.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Spacer(Modifier.width(7.dp))
-                        Text(mainCommand(card.command), color = TextDim, fontSize = 10.sp)
+
+                Spacer(Modifier.width(11.dp))
+
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                card.title,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.width(7.dp))
+                            Text(mainCommand(card.command), color = TextDim, fontSize = 11.sp)
+                        }
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            card.subtitle,
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    Text(card.subtitle, color = TextSecondary, fontSize = 11.sp)
+
+                    IconButton(onClick = {
+                        onDismiss()
+                        onEdit()
+                    }) {
+                        Icon(Icons.Default.Edit, "Edit", tint = TextSecondary, modifier = Modifier.size(20.dp))
+                    }
+
+                    IconButton(
+                        enabled = !running,
+                        onClick = {
+                            onDismiss()
+                            onDelete()
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            "Delete",
+                            tint = if (running) TextDim.copy(alpha = .35f) else Red,
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
                 }
-                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close", tint = TextSecondary) }
             }
+
+            Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Outline)
-            Spacer(Modifier.height(6.dp))
-            MenuRow(Icons.Default.PlayArrow, "Run", cardAccent, onRun)
-            MenuRow(Icons.Default.Edit, "Edit Card", TextSecondary, onEdit)
-            MenuRow(Icons.Default.ContentCopy, "Duplicate", TextSecondary, onCopy)
-            MenuRow(Icons.Default.PlaylistAdd, "Add to Queue", Cyan, onQueue)
-            MenuRow(Icons.Default.Schedule, "Schedule", Amber, onEdit)
-            MenuRow(Icons.Default.AddToHomeScreen, "Add to Home Screen", TextSecondary, onShortcut)
-            if (job?.status == JobStatus.RUNNING || job?.status == JobStatus.PAUSED) {
-                Text("A running card cannot be deleted.", color = TextDim, fontSize = 10.5.sp, modifier = Modifier.padding(14.dp))
-            } else {
-                MenuRow(Icons.Default.Delete, "Delete", Red, onDelete)
+            Spacer(Modifier.height(12.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MenuGridButton(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.PlayArrow,
+                    label = "Run",
+                    tint = cardAccent,
+                    onClick = { onDismiss(); onRun() }
+                )
+                MenuGridButton(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.ContentCopy,
+                    label = "Duplicate",
+                    tint = TextSecondary,
+                    onClick = { onDismiss(); onCopy() }
+                )
+                MenuGridButton(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.PlaylistAdd,
+                    label = "Add to Queue",
+                    tint = Cyan,
+                    onClick = { onDismiss(); onQueue() }
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MenuGridButton(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.Schedule,
+                    label = "Schedule",
+                    tint = Amber,
+                    onClick = { onDismiss(); onEdit() }
+                )
+                MenuGridButton(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.AddToHomeScreen,
+                    label = "Add to Home Screen",
+                    tint = TextSecondary,
+                    onClick = { onDismiss(); onShortcut() }
+                )
+                Spacer(Modifier.weight(1f))
             }
         }
     }
 }
 
-
 @Composable
-private fun MenuRow(icon: ImageVector, text: String, tint: Color, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+private fun MenuGridButton(
+    modifier: Modifier,
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .height(78.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .border(1.dp, Outline, RoundedCornerShape(16.dp))
             .combinedClickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 6.dp, vertical = 9.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(14.dp))
-        Text(text, color = if (tint == Red) Red else TextPrimary, fontSize = 13.sp)
+        Icon(icon, null, tint = tint, modifier = Modifier.size(23.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(
+            label,
+            color = TextPrimary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2
+        )
     }
 }
 
@@ -637,6 +848,7 @@ private fun EditCardScreen(
     onBack: () -> Unit,
     onSave: (TaskCard) -> Unit
 ) {
+    val context = LocalContext.current
     var title by remember(card.id) { mutableStateOf(card.title) }
     var subtitle by remember(card.id) { mutableStateOf(card.subtitle) }
     var actionLabel by remember(card.id) { mutableStateOf(card.actionLabel) }
@@ -646,6 +858,7 @@ private fun EditCardScreen(
     var customColorHex by remember(card.id) { mutableStateOf(card.customColorHex) }
     var iconAlpha by remember(card.id) { mutableStateOf(card.iconAlpha.coerceIn(0.15f, 1f)) }
     var icon by remember(card.id) { mutableStateOf(card.icon) }
+    var customIconPath by remember(card.id) { mutableStateOf(card.customIconPath) }
     val currentAccent = customAccent(customColorHex) ?: accent(color)
     var transfers by remember(card.id) { mutableStateOf(card.transfers?.toString().orEmpty()) }
     var checkers by remember(card.id) { mutableStateOf(card.checkers?.toString().orEmpty()) }
@@ -655,60 +868,141 @@ private fun EditCardScreen(
     var hour by remember(card.id) { mutableStateOf((card.scheduleHour ?: 3).toString()) }
     var minute by remember(card.id) { mutableStateOf((card.scheduleMinute ?: 0).toString().padStart(2, '0')) }
 
+    val iconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val dir = File(context.filesDir, "card-icons").apply { mkdirs() }
+                val dest = File(dir, "${card.id}.img")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                } ?: error("Icon file could not be read")
+                customIconPath = dest.absolutePath
+            }.onFailure {
+                toast(context, "Icon could not be imported: ${it.message}")
+            }
+        }
+    }
+
+    fun buildCard(): TaskCard {
+        val h = hour.toIntOrNull()?.coerceIn(0, 23)
+        val m = minute.toIntOrNull()?.coerceIn(0, 59)
+        return card.copy(
+            title = title.ifBlank { "Task" },
+            subtitle = subtitle,
+            actionLabel = actionLabel.ifBlank { "Run" },
+            command = command.trim(),
+            workDir = workDir.trim().ifBlank { "/storage/emulated/0/" },
+            color = color,
+            customColorHex = customColorHex.trim(),
+            iconAlpha = iconAlpha,
+            customIconPath = customIconPath,
+            icon = icon,
+            transfers = transfers.toIntOrNull()?.coerceIn(1, 64),
+            checkers = checkers.toIntOrNull()?.coerceIn(1, 128),
+            bwlimit = bwlimit.trim(),
+            scheduleEnabled = scheduleEnabled && h != null && m != null,
+            scheduleHour = if (scheduleEnabled) h else null,
+            scheduleMinute = if (scheduleEnabled) m else null
+        )
+    }
+
     Column(Modifier.fillMaxSize().background(Amoled)) {
-        TopBar(title = "Edit Card", onBack = onBack, action = {
-            IconButton(onClick = {
-                val h = hour.toIntOrNull()?.coerceIn(0, 23)
-                val m = minute.toIntOrNull()?.coerceIn(0, 59)
-                onSave(
-                    card.copy(
-                        title = title.ifBlank { "Görev" },
-                        subtitle = subtitle,
-                        actionLabel = actionLabel.ifBlank { "Çalıştır" },
-                        command = command.trim(),
-                        workDir = workDir.trim().ifBlank { "/storage/emulated/0/" },
-                        color = color,
-                        customColorHex = customColorHex.trim(),
-                        iconAlpha = iconAlpha,
-                        icon = icon,
-                        transfers = transfers.toIntOrNull()?.coerceIn(1, 64),
-                        checkers = checkers.toIntOrNull()?.coerceIn(1, 128),
-                        bwlimit = bwlimit.trim(),
-                        scheduleEnabled = scheduleEnabled && h != null && m != null,
-                        scheduleHour = if (scheduleEnabled) h else null,
-                        scheduleMinute = if (scheduleEnabled) m else null
-                    )
-                )
-            }) { Icon(Icons.Default.Check, "Save", tint = Green) }
-        })
+        TopBar(
+            title = "Edit Card",
+            onBack = onBack,
+            action = {
+                IconButton(onClick = { onSave(buildCard()) }) {
+                    Icon(Icons.Default.Check, "Save", tint = Green)
+                }
+            }
+        )
 
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = 32.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.Top) {
                 Box(
-                    Modifier.size(62.dp).clip(RoundedCornerShape(19.dp)).background(currentAccent.copy(alpha = .18f)).border(1.dp, currentAccent.copy(alpha = .45f), RoundedCornerShape(19.dp)),
+                    Modifier
+                        .width(58.dp)
+                        .height(76.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(currentAccent.copy(alpha = .10f))
+                        .border(1.dp, currentAccent.copy(alpha = .38f), RoundedCornerShape(18.dp)),
                     contentAlignment = Alignment.Center
-                ) { Icon(cardIcon(icon), null, tint = currentAccent.copy(alpha = iconAlpha), modifier = Modifier.size(30.dp)) }
+                ) {
+                    CardIconGraphic(
+                        customIconPath = customIconPath,
+                        icon = icon,
+                        tint = currentAccent.copy(alpha = iconAlpha),
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
+
                 Spacer(Modifier.width(12.dp))
+
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Card name") },
+                    label = { Text("Task name") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     colors = darkTextFieldColors()
                 )
             }
 
-            OutlinedTextField(value = subtitle, onValueChange = { subtitle = it }, label = { Text("Subtitle") }, modifier = Modifier.fillMaxWidth(), colors = darkTextFieldColors())
-            OutlinedTextField(value = actionLabel, onValueChange = { actionLabel = it }, label = { Text("Action label") }, modifier = Modifier.fillMaxWidth(), colors = darkTextFieldColors())
+            OutlinedTextField(
+                value = subtitle,
+                onValueChange = { subtitle = it },
+                label = { Text("Subtitle") },
+                modifier = Modifier.fillMaxWidth(),
+                colors = darkTextFieldColors()
+            )
+
+            OutlinedTextField(
+                value = actionLabel,
+                onValueChange = { actionLabel = it },
+                label = { Text("Action label") },
+                modifier = Modifier.fillMaxWidth(),
+                colors = darkTextFieldColors()
+            )
 
             SectionLabel("Icon")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CardIcon.entries.forEach { candidate ->
-                    IconChoice(candidate, selected = icon == candidate, accent = currentAccent) { icon = candidate }
+                    IconChoice(
+                        candidate,
+                        selected = icon == candidate && customIconPath.isBlank(),
+                        accent = currentAccent
+                    ) {
+                        icon = candidate
+                        customIconPath = ""
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { iconPicker.launch("image/*") },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Add Custom Icon")
+                }
+
+                if (customIconPath.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = { customIconPath = "" },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Red),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Remove")
+                    }
                 }
             }
 
@@ -721,8 +1015,15 @@ private fun EditCardScreen(
                             .size(34.dp)
                             .clip(CircleShape)
                             .background(c)
-                            .border(if (color == candidate) 3.dp else 0.dp, if (color == candidate) Color.White else Color.Transparent, CircleShape)
-                            .combinedClickable(onClick = { color = candidate; customColorHex = "" })
+                            .border(
+                                if (color == candidate && customColorHex.isBlank()) 3.dp else 0.dp,
+                                if (color == candidate && customColorHex.isBlank()) Color.White else Color.Transparent,
+                                CircleShape
+                            )
+                            .combinedClickable(onClick = {
+                                color = candidate
+                                customColorHex = ""
+                            })
                     )
                 }
             }
@@ -736,7 +1037,8 @@ private fun EditCardScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = darkTextFieldColors()
             )
-            Text("Icon opacity ${(iconAlpha * 100).toInt()}%", color = TextSecondary, fontSize = 11.sp)
+
+            Text("Icon opacity ${(iconAlpha * 100).toInt()}%", color = TextSecondary, fontSize = 12.sp)
             Slider(
                 value = iconAlpha,
                 onValueChange = { iconAlpha = it },
@@ -748,13 +1050,17 @@ private fun EditCardScreen(
             Text(
                 "Enter a normal rclone command. Quoted paths and Termux-style shared-storage paths are supported.",
                 color = TextDim,
-                fontSize = 10.sp
+                fontSize = 11.sp
             )
+
             OutlinedTextField(
                 value = command,
                 onValueChange = { command = it },
                 modifier = Modifier.fillMaxWidth().height(170.dp),
-                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, color = Color(0xFF86EFAC)),
+                textStyle = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFF86EFAC)
+                ),
                 colors = darkTextFieldColors(),
                 label = { Text("rclone ...") }
             )
@@ -776,12 +1082,14 @@ private fun EditCardScreen(
             ) {
                 Text(if (advancedExpanded) "Hide Advanced Options" else "Advanced Options")
             }
+
             if (advancedExpanded) {
                 Text(
                     "If left blank, the app default is used. A value written directly in the command always takes priority.",
                     color = TextDim,
-                    fontSize = 10.sp
+                    fontSize = 11.sp
                 )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = transfers,
@@ -800,6 +1108,7 @@ private fun EditCardScreen(
                         colors = darkTextFieldColors()
                     )
                 }
+
                 OutlinedTextField(
                     value = bwlimit,
                     onValueChange = { bwlimit = it },
@@ -812,14 +1121,26 @@ private fun EditCardScreen(
             SectionLabel("Schedule")
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text("Run automatically every day", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text(if (canExactAlarm) "Exact alarm permission ready" else "Exact alarm permission unavailable; timing may be approximate", color = TextDim, fontSize = 10.sp)
+                    Text("Run automatically every day", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (canExactAlarm) {
+                            "Exact alarm permission ready"
+                        } else {
+                            "Exact alarm permission unavailable; timing may be approximate"
+                        },
+                        color = TextDim,
+                        fontSize = 11.sp
+                    )
                 }
-                Switch(checked = scheduleEnabled, onCheckedChange = {
-                    scheduleEnabled = it
-                    if (it && !canExactAlarm) onRequestExactAlarm()
-                })
+                Switch(
+                    checked = scheduleEnabled,
+                    onCheckedChange = {
+                        scheduleEnabled = it
+                        if (it && !canExactAlarm) onRequestExactAlarm()
+                    }
+                )
             }
+
             if (scheduleEnabled) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
@@ -842,29 +1163,7 @@ private fun EditCardScreen(
             }
 
             Button(
-                onClick = {
-                    val h = hour.toIntOrNull()?.coerceIn(0, 23)
-                    val m = minute.toIntOrNull()?.coerceIn(0, 59)
-                    onSave(
-                        card.copy(
-                            title = title.ifBlank { "Görev" },
-                            subtitle = subtitle,
-                            actionLabel = actionLabel.ifBlank { "Çalıştır" },
-                            command = command.trim(),
-                            workDir = workDir.trim().ifBlank { "/storage/emulated/0/" },
-                            color = color,
-                            customColorHex = customColorHex.trim(),
-                            iconAlpha = iconAlpha,
-                            icon = icon,
-                            transfers = transfers.toIntOrNull()?.coerceIn(1, 64),
-                            checkers = checkers.toIntOrNull()?.coerceIn(1, 128),
-                            bwlimit = bwlimit.trim(),
-                            scheduleEnabled = scheduleEnabled && h != null && m != null,
-                            scheduleHour = if (scheduleEnabled) h else null,
-                            scheduleMinute = if (scheduleEnabled) m else null
-                        )
-                    )
-                },
+                onClick = { onSave(buildCard()) },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black),
                 shape = RoundedCornerShape(15.dp)
@@ -878,12 +1177,38 @@ private fun EditCardScreen(
 }
 
 @Composable
+private fun CardIconGraphic(
+    customIconPath: String,
+    icon: CardIcon,
+    tint: Color,
+    modifier: Modifier
+) {
+    val bitmap = remember(customIconPath) {
+        customIconPath
+            .takeIf { it.isNotBlank() }
+            ?.let { path -> runCatching { BitmapFactory.decodeFile(path) }.getOrNull() }
+            ?.asImageBitmap()
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Fit
+        )
+    } else {
+        Icon(cardIcon(icon), contentDescription = null, tint = tint, modifier = modifier)
+    }
+}
+
+@Composable
 private fun IconChoice(icon: CardIcon, selected: Boolean, accent: Color, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(43.dp)
             .clip(RoundedCornerShape(13.dp))
-            .background(Surface)
+            .background(Amoled)
             .border(1.dp, if (selected) accent else Outline, RoundedCornerShape(13.dp))
             .combinedClickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -904,7 +1229,7 @@ private fun DetailScreen(
     onMenu: () -> Unit
 ) {
     val accent = accent(card?.color ?: CardColor.GREEN)
-    val state = job ?: JobState(cardId = card?.id.orEmpty(), title = card?.title ?: "Görev")
+    val state = job ?: JobState(cardId = card?.id.orEmpty(), title = card?.title ?: "Task")
 
     Column(Modifier.fillMaxSize().background(Amoled)) {
         TopBar(title = card?.let { "${it.title} · ${it.actionLabel}" } ?: "Task Details", onBack = onBack, action = {
@@ -968,7 +1293,7 @@ private fun DetailScreen(
                         Icon(Icons.Default.Stop, null)
                         Spacer(Modifier.width(6.dp)); Text("Stop")
                     }
-                    Button(onClick = onPause, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = Surface2)) {
+                    Button(onClick = onPause, modifier = Modifier.weight(1f), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = Amoled2)) {
                         Icon(Icons.Default.Pause, null)
                         Spacer(Modifier.width(6.dp)); Text("Pause")
                     }
@@ -1010,6 +1335,8 @@ private fun SettingsScreen(
     onConnectGoogleDrive: (String, String, String) -> Unit,
     onImportCards: () -> Unit,
     onExportCards: () -> Unit,
+    onImportFullBackup: () -> Unit,
+    onExportFullBackup: () -> Unit,
     onRequestAllFiles: () -> Unit,
     onRequestNotification: () -> Unit,
     onRequestExactAlarm: () -> Unit,
@@ -1042,6 +1369,7 @@ private fun SettingsScreen(
     var resetCardsDialog by remember { mutableStateOf(false) }
     var defaultsDialog by remember { mutableStateOf(false) }
     var clearDataDialog by remember { mutableStateOf(false) }
+    var quickDriveDialog by remember { mutableStateOf(false) }
     var driveConnectDialog by remember { mutableStateOf(false) }
     var termuxConfigDialog by remember { mutableStateOf(false) }
     var driveRemoteName by remember { mutableStateOf("gdrive") }
@@ -1062,7 +1390,8 @@ private fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             SettingsGroup("Rclone") {
-                SettingsRow(Icons.Default.Cloud, "Connect Google Drive", "Open Google sign-in in your browser", onClick = { driveConnectDialog = true })
+                SettingsRow(Icons.Default.Cloud, "Google Drive Sign-In", "Open the browser and connect like rclone config", onClick = { quickDriveDialog = true })
+                SettingsRow(Icons.Default.Security, "Connect with Custom OAuth", "Use your own Google OAuth client ID and secret", onClick = { driveConnectDialog = true })
                 SettingsRow(Icons.Default.FileOpen, "rclone.conf", "Import", onClick = onImportConfig)
                 SettingsRow(Icons.Default.Code, "Import from Termux", "Show a copyable command to locate and export rclone.conf", onClick = { termuxConfigDialog = true })
                 SettingsRow(Icons.Default.FileDownload, "rclone.conf", "Export", onClick = onExportConfig)
@@ -1122,6 +1451,8 @@ private fun SettingsScreen(
             }
 
             SettingsGroup("Data") {
+                SettingsRow(Icons.Default.Save, "Back Up Entire App", "Cards, rclone.conf, app settings and custom icons. Contains credentials; keep the file private.", onClick = onExportFullBackup)
+                SettingsRow(Icons.Default.FileOpen, "Restore Entire App", "Restore a full Rclone Cards backup", onClick = onImportFullBackup)
                 SettingsRow(Icons.Default.FileDownload, "Back Up Cards", "Export all task cards as JSON", onClick = onExportCards)
                 SettingsRow(Icons.Default.FileOpen, "Restore Cards", "Import a previous JSON card backup", onClick = onImportCards)
                 SettingsRow(Icons.Default.Refresh, "Restore Default Cards", "Replace the current list with example cards", valueColor = Amber, onClick = {
@@ -1152,7 +1483,7 @@ private fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { termuxConfigDialog = false },
-            containerColor = Surface,
+            containerColor = Amoled,
             title = { Text("Import from Termux") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1201,10 +1532,56 @@ private fun SettingsScreen(
         )
     }
 
+    if (quickDriveDialog) {
+        AlertDialog(
+            onDismissRequest = { quickDriveDialog = false },
+            containerColor = Amoled,
+            title = { Text("Google Drive Sign-In") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "This starts the familiar rclone browser sign-in flow. Google opens in your browser, you approve the account, and the token is saved into the app's rclone.conf.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                    Text(
+                        "Note: rclone's shared Google OAuth client is being retired during 2026. If this quick flow stops working, use Custom OAuth or import your Termux rclone.conf.",
+                        color = Amber,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
+                    OutlinedTextField(
+                        value = driveRemoteName,
+                        onValueChange = { driveRemoteName = it.take(40) },
+                        label = { Text("Remote name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = darkTextFieldColors()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onConnectGoogleDrive(driveRemoteName.ifBlank { "gdrive" }, "", "")
+                    quickDriveDialog = false
+                    toast(context, "Waiting for browser authorization…")
+                }) {
+                    Text("Open Sign-In", color = Green)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { quickDriveDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     if (driveConnectDialog) {
         AlertDialog(
             onDismissRequest = { driveConnectDialog = false },
-            containerColor = Surface,
+            containerColor = Amoled,
             title = { Text("Connect Google Drive") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1269,7 +1646,7 @@ private fun SettingsScreen(
     if (aboutDialog) {
         AlertDialog(
             onDismissRequest = { aboutDialog = false },
-            containerColor = Surface,
+            containerColor = Amoled,
             title = { Text("Rclone Cards") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1298,7 +1675,7 @@ private fun SettingsScreen(
     if (defaultsDialog) {
         AlertDialog(
             onDismissRequest = { defaultsDialog = false },
-            containerColor = Surface,
+            containerColor = Amoled,
             title = { Text("Default rclone options") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1336,7 +1713,7 @@ private fun SettingsScreen(
     if (clearDataDialog) {
         AlertDialog(
             onDismissRequest = { clearDataDialog = false },
-            containerColor = Surface,
+            containerColor = Amoled,
             title = { Text("Clear app data?") },
             text = { Text("Cards return to defaults, rclone.conf is cleared and app settings are reset. Files on Drive or on the phone are not deleted.", color = TextSecondary) },
             confirmButton = {
@@ -1356,7 +1733,7 @@ private fun SettingsScreen(
     if (configDialog) {
         AlertDialog(
             onDismissRequest = { configDialog = false },
-            containerColor = Surface,
+            containerColor = Amoled,
             title = { Text("rclone.conf") },
             text = {
                 OutlinedTextField(
@@ -1384,13 +1761,13 @@ private fun SettingsScreen(
         }
         AlertDialog(
             onDismissRequest = { remotesDialog = false },
-            containerColor = Surface,
+            containerColor = Amoled,
             title = { Text("Remotes") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (remotes.isEmpty()) Text("No remotes found, or a config has not been imported yet.", color = TextSecondary, fontSize = 12.sp)
                     remotes.forEach { remote ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF0A0A0C)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Amoled).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Cloud, null, tint = Cyan, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(10.dp))
                             Text(remote, color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
@@ -1412,7 +1789,7 @@ private fun SettingsScreen(
     if (resetCardsDialog) {
         AlertDialog(
             onDismissRequest = { resetCardsDialog = false },
-            containerColor = Surface,
+            containerColor = Amoled,
             title = { Text("Restore default cards?") },
             text = { Text("The current task cards will be replaced. Export a card backup first if needed.", color = TextSecondary) },
             confirmButton = {
@@ -1433,7 +1810,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
     Column {
         Text(title.uppercase(Locale.getDefault()), color = TextDim, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
         Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surface).border(1.dp, Outline, RoundedCornerShape(20.dp)),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Amoled).border(1.dp, Outline, RoundedCornerShape(20.dp)),
             content = content
         )
     }
@@ -1586,9 +1963,9 @@ private fun formatDuration(seconds: Long): String {
     val m = (s % 3600) / 60
     val sec = s % 60
     return when {
-        h > 0 -> "%d sa %02d dk".format(h, m)
-        m > 0 -> "%d dk %02d sn".format(m, sec)
-        else -> "$sec sn"
+        h > 0 -> "%dh %02dm".format(h, m)
+        m > 0 -> "%dm %02ds".format(m, sec)
+        else -> "${sec}s"
     }
 }
 

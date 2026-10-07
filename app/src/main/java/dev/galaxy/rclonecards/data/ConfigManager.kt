@@ -78,8 +78,8 @@ object ConfigManager {
         val block = buildString {
             appendLine(header)
             appendLine("type = drive")
-            appendLine("client_id = ${clientId.trim()}")
-            appendLine("client_secret = ${clientSecret.trim()}")
+            if (clientId.isNotBlank()) appendLine("client_id = ${clientId.trim()}")
+            if (clientSecret.isNotBlank()) appendLine("client_secret = ${clientSecret.trim()}")
             appendLine("scope = drive")
             appendLine("token = ${tokenJson.trim()}")
         }.trimEnd()

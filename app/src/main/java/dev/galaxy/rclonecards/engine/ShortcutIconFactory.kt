@@ -1,6 +1,7 @@
 package dev.galaxy.rclonecards.engine
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -18,6 +19,19 @@ object ShortcutIconFactory {
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.BLACK)
+
+        val customBitmap = card.customIconPath
+            .takeIf { it.isNotBlank() }
+            ?.let { path -> runCatching { BitmapFactory.decodeFile(path) }.getOrNull() }
+
+        if (customBitmap != null) {
+            val dst = RectF(28f, 22f, 164f, 170f)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                alpha = (card.iconAlpha.coerceIn(0.15f, 1f) * 255f).roundToInt()
+            }
+            canvas.drawBitmap(customBitmap, null, dst, paint)
+            return Icon.createWithBitmap(bitmap)
+        }
 
         val color = resolveColor(card)
         val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
