@@ -46,6 +46,21 @@ object ConfigManager {
         context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
             ?: error("File could not be written")
     }
+
+    fun hasRemote(name: String): Boolean {
+        val wanted = name.trim().removeSuffix(":")
+        if (wanted.isBlank()) return false
+
+        return readText()
+            .lineSequence()
+            .map { it.trim() }
+            .any { line ->
+                line.startsWith("[") &&
+                    line.endsWith("]") &&
+                    line.substring(1, line.length - 1).equals(wanted, ignoreCase = true)
+            }
+    }
+
     fun upsertDriveRemote(
         remoteName: String,
         clientId: String,

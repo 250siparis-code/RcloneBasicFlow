@@ -17,6 +17,7 @@ import dev.galaxy.rclonecards.MainActivity
 import dev.galaxy.rclonecards.R
 import dev.galaxy.rclonecards.data.AppSettings
 import dev.galaxy.rclonecards.data.CardStore
+import dev.galaxy.rclonecards.data.ConfigManager
 import dev.galaxy.rclonecards.engine.RcloneEngine
 import dev.galaxy.rclonecards.model.JobState
 import dev.galaxy.rclonecards.model.JobStatus
@@ -85,6 +86,25 @@ class RcloneService : Service() {
                     title = card.title,
                     status = JobStatus.ERROR,
                     lastError = "librclone.so was not found. The APK was built without the rclone engine."
+                )
+            )
+            updateForeground()
+            return
+        }
+
+        val missingRemotes = RcloneEngine.referencedRemotes(card.command)
+            .filterNot { ConfigManager.hasRemote(it) }
+
+        if (missingRemotes.isNotEmpty()) {
+            val missing = missingRemotes.joinToString(", ")
+            val message = "Remote '$missing' is not configured. Open Settings > Google Drive Sign-In or import rclone.conf."
+            JobRepository.put(
+                JobState(
+                    cardId = card.id,
+                    title = card.title,
+                    status = JobStatus.ERROR,
+                    lastError = message,
+                    logs = listOf("ERROR  $message")
                 )
             )
             updateForeground()
@@ -177,11 +197,22 @@ class RcloneService : Service() {
                         )
                     }
                 } else {
+                    val fallbackError = previous?.lastError
+                        ?: previous?.logs
+                            ?.asReversed()
+                            ?.firstOrNull { line ->
+                                line.startsWith("ERROR", ignoreCase = true) ||
+                                    line.startsWith("ERR", ignoreCase = true)
+                            }
+                            ?.substringAfter("  ", missingDelimiterValue = "")
+                            ?.takeIf { it.isNotBlank() }
+                        ?: "rclone exit code: $exit"
+
                     JobRepository.update(cardId) {
                         it.copy(
                             status = JobStatus.ERROR,
                             exitCode = exit,
-                            lastError = it.lastError ?: "rclone exit code: $exit",
+                            lastError = fallbackError,
                             finishedAtMillis = System.currentTimeMillis()
                         )
                     }
@@ -210,16 +241,20 @@ class RcloneService : Service() {
     ) {
         reader.useLines { lines ->
             lines.forEach { line ->
-                handleLine(cardId, line)
+                handleLine(cardId, line, label)
             }
         }
     }
 
-    private fun handleLine(cardId: String, raw: String) {
+    private fun handleLine(cardId: String, raw: String, streamLabel: String) {
         if (raw.isBlank()) return
         var display = raw
+        var parsedJson = false
+        var explicitError: String? = null
+
         runCatching {
             val obj = JSONObject(raw)
+            parsedJson = true
             val level = obj.optString("level", "info")
             val msg = obj.optString("msg", raw).trim()
             val objectName = obj.optString("object", "")
@@ -268,9 +303,19 @@ class RcloneService : Service() {
             }
 
             if (level.equals("error", true)) {
-                JobRepository.update(cardId) { it.copy(lastError = msg.ifBlank { raw }) }
+                explicitError = msg.ifBlank { raw }
             }
         }
+
+        if (!parsedJson && streamLabel == "ERR") {
+            explicitError = raw.trim()
+            display = "ERROR  ${raw.trim()}"
+        }
+
+        explicitError?.takeIf { it.isNotBlank() }?.let { message ->
+            JobRepository.update(cardId) { it.copy(lastError = message.take(1000)) }
+        }
+
         JobRepository.appendLog(cardId, display.take(1800))
         updateForeground()
     }

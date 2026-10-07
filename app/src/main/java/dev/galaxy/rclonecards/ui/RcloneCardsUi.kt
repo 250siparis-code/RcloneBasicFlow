@@ -171,7 +171,7 @@ fun RcloneCardsTheme(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalDensity provides Density(
             density = density.density,
-            fontScale = density.fontScale * 1.18f
+            fontScale = density.fontScale * 1.13f
         )
     ) {
         MaterialTheme(
@@ -695,80 +695,108 @@ private fun CardMenuSheet(
                 .clip(RoundedCornerShape(24.dp))
                 .background(Amoled)
                 .border(1.dp, Outline, RoundedCornerShape(24.dp))
-                .padding(14.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp)
         ) {
-            Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
                 Box(
-                    Modifier
+                    modifier = Modifier
                         .width(46.dp)
                         .height(60.dp)
                         .clip(RoundedCornerShape(15.dp))
-                        .background(cardAccent.copy(alpha = .10f))
-                        .border(1.dp, cardAccent.copy(alpha = .26f), RoundedCornerShape(15.dp)),
+                        .background(cardAccent.copy(alpha = .09f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    CardIconGraphic(
-                        customIconPath = card.customIconPath,
-                        icon = card.icon,
-                        tint = cardAccent.copy(alpha = card.iconAlpha),
-                        modifier = Modifier.size(26.dp)
-                    )
+                    Box(
+                        Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(cardAccent.copy(alpha = .08f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CardIconGraphic(
+                            customIconPath = card.customIconPath,
+                            icon = card.icon,
+                            tint = cardAccent.copy(alpha = card.iconAlpha),
+                            modifier = Modifier.size(27.dp)
+                        )
+                    }
                 }
 
                 Spacer(Modifier.width(11.dp))
 
-                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                card.title,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(Modifier.width(7.dp))
-                            Text(mainCommand(card.command), color = TextDim, fontSize = 11.sp)
-                        }
-                        Spacer(Modifier.height(3.dp))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(top = 2.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text(
-                            card.subtitle,
-                            color = TextSecondary,
-                            fontSize = 12.sp,
+                            card.title,
+                            modifier = Modifier.weight(1f, fill = false),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.5.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            mainCommand(card.command),
+                            color = TextDim,
+                            fontSize = 10.5.sp,
+                            maxLines = 1
+                        )
                     }
 
-                    IconButton(onClick = {
+                    Spacer(Modifier.height(4.dp))
+
+                    Text(
+                        card.subtitle,
+                        color = TextSecondary,
+                        fontSize = 11.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(Modifier.width(6.dp))
+
+                IconButton(
+                    onClick = {
                         onDismiss()
                         onEdit()
-                    }) {
-                        Icon(Icons.Default.Edit, "Edit", tint = TextSecondary, modifier = Modifier.size(20.dp))
-                    }
-
-                    IconButton(
-                        enabled = !running,
-                        onClick = {
-                            onDismiss()
-                            onDelete()
-                        }
+                    },
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(TextSecondary.copy(alpha = .07f)),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Default.Delete,
-                            "Delete",
-                            tint = if (running) TextDim.copy(alpha = .35f) else Red,
-                            modifier = Modifier.size(21.dp)
+                            Icons.Default.Edit,
+                            "Edit",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(11.dp))
             HorizontalDivider(color = Outline)
-            Spacer(Modifier.height(12.dp))
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.PlayArrow,
@@ -776,13 +804,19 @@ private fun CardMenuSheet(
                     tint = cardAccent,
                     onClick = { onDismiss(); onRun() }
                 )
+
+                MenuGridDivider()
+
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.ContentCopy,
                     label = "Duplicate",
-                    tint = TextSecondary,
+                    tint = Color(0xFFB8BBC4),
                     onClick = { onDismiss(); onCopy() }
                 )
+
+                MenuGridDivider()
+
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.PlaylistAdd,
@@ -792,9 +826,12 @@ private fun CardMenuSheet(
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = Outline)
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.Schedule,
@@ -802,17 +839,40 @@ private fun CardMenuSheet(
                     tint = Amber,
                     onClick = { onDismiss(); onEdit() }
                 )
+
+                MenuGridDivider()
+
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.AddToHomeScreen,
-                    label = "Add to Home Screen",
-                    tint = TextSecondary,
+                    label = "Add to Home",
+                    tint = Color(0xFFB8BBC4),
                     onClick = { onDismiss(); onShortcut() }
                 )
-                Spacer(Modifier.weight(1f))
+
+                MenuGridDivider()
+
+                MenuGridButton(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.Delete,
+                    label = "Delete",
+                    tint = Red,
+                    enabled = !running,
+                    onClick = { onDismiss(); onDelete() }
+                )
             }
         }
     }
+}
+
+@Composable
+private fun MenuGridDivider() {
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .height(76.dp)
+            .background(Outline)
+    )
 }
 
 @Composable
@@ -821,24 +881,54 @@ private fun MenuGridButton(
     icon: ImageVector,
     label: String,
     tint: Color,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    val effectiveTint = if (enabled) tint else TextDim.copy(alpha = .35f)
+
     Column(
         modifier = modifier
-            .height(78.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, Outline, RoundedCornerShape(16.dp))
-            .combinedClickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 9.dp),
+            .height(82.dp)
+            .combinedClickable(
+                enabled = enabled,
+                onClick = onClick
+            )
+            .padding(horizontal = 5.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(23.dp))
-        Spacer(Modifier.height(6.dp))
+        Box(
+            modifier = Modifier.size(43.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(39.dp)
+                    .clip(CircleShape)
+                    .background(effectiveTint.copy(alpha = .055f))
+            )
+
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(effectiveTint.copy(alpha = .055f))
+            )
+
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = effectiveTint,
+                modifier = Modifier.size(29.dp)
+            )
+        }
+
+        Spacer(Modifier.height(4.dp))
+
         Text(
             label,
-            color = TextPrimary,
-            fontSize = 11.sp,
+            color = if (enabled) TextPrimary else TextDim.copy(alpha = .45f),
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 2
         )

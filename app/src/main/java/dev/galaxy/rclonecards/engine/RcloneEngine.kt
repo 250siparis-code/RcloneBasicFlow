@@ -66,6 +66,21 @@ object RcloneEngine {
         return args
     }
 
+    fun referencedRemotes(rawCommand: String): Set<String> {
+        val parsed = runCatching { ShellWords.parse(rawCommand.trim()) }.getOrElse { return emptySet() }
+
+        return parsed.mapNotNull { token ->
+            val value = token.trim()
+            if (value.contains("://")) return@mapNotNull null
+
+            val match = Regex("^([A-Za-z0-9._-]+):(.*)$").matchEntire(value)
+                ?: return@mapNotNull null
+
+            val name = match.groupValues[1]
+            if (name.length == 1 && name[0].isLetter()) null else name
+        }.toSet()
+    }
+
     fun runQuick(context: Context, argsAfterRclone: List<String>, timeoutSeconds: Long = 20): Result<String> = runCatching {
         val args = mutableListOf<String>()
         args += binary(context).absolutePath
