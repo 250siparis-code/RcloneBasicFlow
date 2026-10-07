@@ -105,6 +105,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -1147,7 +1148,7 @@ private fun SettingsScreen(
 
     if (termuxConfigDialog) {
         val clipboard = LocalClipboardManager.current
-        val termuxCommand = "CFG=\"$(rclone config file | tail -n 1)\"\\ncp \"$CFG\" ~/storage/downloads/rclone.conf"
+        val termuxCommand = "CFG=\"$(rclone config file | tail -n 1)\"\ncp \"\$CFG\" ~/storage/downloads/rclone.conf"
 
         AlertDialog(
             onDismissRequest = { termuxConfigDialog = false },
