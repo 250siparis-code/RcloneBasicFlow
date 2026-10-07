@@ -1,64 +1,74 @@
-# Sadece telefonla APK derleme
+# Build the APK using only a phone
 
-Bilgisayar gerekmez. En rahat yol GitHub Actions'tır.
+A PC is not required. GitHub Actions can build the APK entirely in the cloud.
 
-## 1. GitHub'da repo oluştur
+## 1. Create a GitHub repository
 
-GitHub hesabında yeni ve boş bir repository aç. Örnek ad: `RcloneCards`.
+Create a repository such as `RcloneCards`.
 
-## 2. Projeyi repoya koy
+## 2. Push the project
 
-ChatGPT'den indirdiğin `RcloneCards-project.zip` dosyasını bir bulut IDE / GitHub Codespaces üzerinden açıp repository köküne çıkar. Repo kökünde şu dosyaları görmelisin:
-
-```text
-.github/
-app/
-scripts/
-build.gradle.kts
-gradle.properties
-settings.gradle.kts
-README.md
-```
-
-Dosyaları commit edip `main` dalına gönder.
-
-## 3. GitHub Actions'ı çalıştır
-
-GitHub'da:
-
-```text
-Actions
-  > Build Android APK
-  > Run workflow
-```
-
-`main` dalını seçip çalıştır.
-
-Workflow ayrıca `main` dalına her push'ta otomatik başlar.
-
-## 4. APK'yı indir
-
-Build yeşil tamamlanınca ilgili workflow run'ını aç:
-
-```text
-Artifacts
-  > RcloneCards-arm64-debug
-```
-
-ZIP'i indir, içinden `app-debug.apk` dosyasını çıkar ve telefona kur.
-
-## 5. İlk açılış
-
-- Ayarlar > Tüm dosyalara erişim: izin ver
-- Ayarlar > Bildirimler: izin ver
-- Ayarlar > rclone.conf > İçe aktar
-
-Termux config kopyası:
+From Termux:
 
 ```bash
-cp ~/.config/rclone/rclone.conf /storage/emulated/0/Download/rclone.conf
+cd ~/RcloneCards
+git init
+git branch -M main
+git add .
+git commit -m "Initial RcloneCards Android app"
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git
+git remote add origin https://github.com/YOUR-USER/RcloneCards.git
+git push -u origin main
 ```
 
-## Build hata verirse
+## 3. Build automatically
 
-Workflow logundaki ilk kırmızı hatayı kopyalayıp ChatGPT'ye gönder. Genellikle tek commit ile düzeltilebilir.
+Every push to `main` starts:
+
+```text
+Actions > Build Android APK
+```
+
+You can also start it manually with **Run workflow**.
+
+## 4. Download the APK
+
+When the run is green, open:
+
+```text
+Artifacts > RcloneCards-arm64-minified
+```
+
+Extract and install:
+
+```text
+app-release.apk
+```
+
+## 5. First launch
+
+In the app:
+
+- Grant **All files access**
+- Grant **Notifications**
+- Connect Google Drive, or import an existing `rclone.conf`
+
+### Import from Termux
+
+Run:
+
+```bash
+CFG="$(rclone config file | tail -n 1)"
+cp "$CFG" ~/storage/downloads/rclone.conf
+```
+
+Then select:
+
+```text
+Settings > Rclone > rclone.conf > Import
+```
+
+## If a build fails
+
+Open the failed GitHub Actions run and inspect the first failed step. The job log normally contains the exact Gradle, Kotlin, Android SDK or native-build error.

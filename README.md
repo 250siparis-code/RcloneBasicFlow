@@ -1,79 +1,76 @@
 # Rclone Cards
 
-Rclone Cards, AMOLED siyah arka planlı ve büyük görev kartları üzerinden **gerçek rclone komutları** çalıştıran Android uygulamasıdır.
+Rclone Cards is a lightweight AMOLED-first Android front end for **real rclone commands**. It is designed around editable task cards instead of a full file manager: tap a card to run a predefined sync, copy, move, check, size, delete, purge or other rclone operation, then watch live transfer progress directly on the card.
 
-Bu proje HTML prototipi değildir. GitHub Actions derlemesi sırasında resmi **rclone v1.75.1** kaynak kodu Android ARM64 için derlenir, APK'nın native library dizinine `librclone.so` adıyla paketlenir ve uygulama bu ELF dosyasını `ProcessBuilder` ile doğrudan çalıştırır.
+Created by **BlackWare** with **OpenAI ChatGPT**.
 
-## Ana özellikler
+## Highlights
 
-- Saf `#000000` AMOLED ana ekran
-- Büyük, isimlendirilebilir görev kartları
-- Karta dokununca gerçek `rclone` işlemi başlatma
-- Kartı uzun basınca işlem menüsü
-- Kart ekle / düzenle / kopyala / yeniden adlandır / renk / simge / sil
-- Kart başına gelişmiş `--transfers`, `--checkers`, `--bwlimit` ayarları
-- Uygulama genelinde varsayılan `--transfers=4`, `--checkers=8` ayarları
-- Serbest rclone komutu: `sync`, `copy`, `move`, `check`, `size`, `delete`, `purge`, `lsjson` vb.
-- Tırnaklı yollar ve `\\` + satır sonu ile çok satırlı Termux komutlarını ayrıştırma
-- Gerçek arka plan çalışması: Android foreground `dataSync` servisi
-- Aktarım sırasında CPU'nun uyumasını engelleyen `PARTIAL_WAKE_LOCK`
-- Gerçek rclone JSON stats: yüzde, aktarılmış/toplam byte, hız, ETA, dosya sayısı
-- İşlem bitince isteğe bağlı sonuç bildirimi
-- Canlı rclone logları ve hata gösterimi
-- Durdur / `SIGSTOP` ile duraklat / `SIGCONT` ile devam et
-- İş kuyruğu
-- Günlük zamanlayıcı ve yeniden başlatma sonrası alarmı tekrar kurma
-- Ana ekran kısayolu oluşturma
-- `rclone.conf` içe aktar / dışa aktar / uygulama içinde düzenle
-- Remote listesini gerçek `rclone listremotes --json` ile gösterme
-- Kartları JSON olarak yedekleme / geri yükleme
-- Android 11+ için “Tüm dosyalara erişim” ayarına yönlendirme
+- Pure `#000000` AMOLED interface
+- Large editable task cards
+- Real rclone execution, not a web mockup
+- Live percentage, transferred bytes, speed, ETA, file count and logs
+- Android foreground `dataSync` service for long-running jobs
+- Pause, resume, stop and queue support
+- Daily scheduling
+- Per-card home-screen shortcuts
+- `rclone.conf` import, export and in-app editing
+- Google Drive connection flow inside the app
+- JSON card backup and restore
+- Per-card `--transfers`, `--checkers` and `--bwlimit`
+- Termux-style quoted paths and multiline rclone commands
+- Automatic conversion of `~/storage/shared/...` paths to `/storage/emulated/0/...`
+- ARM64 Android build with a bundled rclone engine
+- Minified release APK with unused Android resources removed
+- rclone build limited to the Google Drive and local backends to keep the APK smaller
 
-## Gerçek ilerleme nasıl geliyor?
+## How it works
 
-Kullanıcının komutundaki `--progress` kaldırılır ve uygulama otomatik olarak aşağıdakileri ekler:
+During GitHub Actions builds, the official **rclone v1.75.1** source is compiled for Android ARM64 and packaged as `librclone.so`. The Android app executes that binary directly with `ProcessBuilder`.
+
+User-entered `--progress` is removed because the app reads structured rclone JSON statistics instead. The following options are added automatically when needed:
 
 ```text
---config <uygulamanın private rclone.conf yolu>
---cache-dir <uygulama cache yolu>
+--config <app-private rclone.conf>
+--cache-dir <app-private cache>
 --use-json-log
 --stats 1s
 --stats-log-level NOTICE
 --log-level INFO
 ```
 
-Rclone'un NDJSON log satırlarındaki `stats` nesnesi okunur. Arayüzde görülen yüzde, hız, ETA ve dosya sayısı sahte değer değildir.
+The UI reads rclone's NDJSON `stats` data to display real progress instead of simulated values.
 
-## Telefonda, bilgisayarsız APK derleme
+## First setup
 
-Projede hazır `.github/workflows/android.yml` vardır. Workflow:
+Open **Settings** in the app and:
 
-1. JDK 17 ve Go 1.27.x kurar.
-2. Android SDK 35 + NDK 27.2 kurar.
-3. Resmi `rclone v1.75.1` kaynağını ARM64 Android için derler.
-4. `librclone.so` dosyasını APK içine koyar.
-5. Android uygulamasını derler.
-6. `RcloneCards-arm64-debug` isimli indirilebilir APK artifact'ı üretir.
+1. Grant **All files access** if you use local storage paths.
+2. Grant **Notifications** so long-running foreground tasks can report status.
+3. Connect Google Drive inside the app, or import an existing `rclone.conf`.
 
-Ayrıntılı telefon adımları için `PHONE_BUILD.md` dosyasına bak.
+### Import an existing Termux config
 
-## İlk kurulum
+The same instruction is available inside the app at:
 
-Uygulamayı açtıktan sonra `Ayarlar` bölümünde:
-
-1. **Tüm dosyalara erişim** iznini ver.
-2. **Bildirim** iznini ver.
-3. Mevcut `rclone.conf` dosyanı içe aktar.
-
-Termux'taki config'i erişilebilir bir yere kopyalamak için:
-
-```bash
-cp ~/.config/rclone/rclone.conf /storage/emulated/0/Download/rclone.conf
+```text
+Settings > Rclone > Import from Termux
 ```
 
-Sonra uygulamada `Ayarlar > rclone.conf > İçe aktar`.
+Run:
 
-## Kart örneği
+```bash
+CFG="$(rclone config file | tail -n 1)"
+cp "$CFG" ~/storage/downloads/rclone.conf
+```
+
+Then use:
+
+```text
+Settings > Rclone > rclone.conf > Import
+```
+
+## Example task
 
 ```bash
 rclone copy \
@@ -82,31 +79,44 @@ rclone copy \
   --progress
 ```
 
-Kart komutu bir **rclone komutudur**, genel amaçlı shell script değildir. `|`, `&&`, `rm` gibi shell işlemleri çalıştırılmaz; böylece karttan yalnızca paketlenmiş rclone yürütülür.
+Task commands are **rclone commands**, not arbitrary shell scripts.
 
-## Android depolama notu
+## Build on a phone
 
-`MANAGE_EXTERNAL_STORAGE`, `/storage/emulated/0/...` ve uygun ikincil depolama yollarına geniş erişim sağlar. Android sistem kısıtları nedeniyle `/Android/data` ve `/Android/obb` gibi bazı alanlar yine kapalı kalabilir. Varsayılan tam-depolama kartı bu nedenle `/Android/**` yolunu dışlar.
+Every push to `main` starts `.github/workflows/android.yml`.
 
-## Neden targetSdk 34?
+The workflow:
 
-Bu proje kişisel/sideload kullanımına göre ayarlanmıştır: `compileSdk=35`, `targetSdk=34`. Android 15'i hedefleyen (`targetSdk 35+`) `dataSync` foreground servislerinde 24 saatte toplam 6 saatlik arka plan süresi sınırı vardır. Büyük rclone yedeklerinin saatlerce sürebilmesi nedeniyle bu kişisel yapı target 34 kullanır. Play Store'a yayımlanacak sürümde güncel hedef-SDK şartlarına göre mimariyi `user-initiated data transfer` gibi güncel API'lerle yeniden ele almak gerekir.
+1. Sets up JDK 17 and Go.
+2. Installs Android SDK 35 and NDK 27.2.
+3. Builds rclone v1.75.1 for Android ARM64.
+4. Builds a minified Android release APK.
+5. Uploads the `RcloneCards-arm64-minified` artifact.
 
-## Mimari
+See [PHONE_BUILD.md](PHONE_BUILD.md).
 
-- Kotlin + Jetpack Compose
-- `ForegroundService` (`dataSync`)
-- Resmi rclone CLI ARM64 build
-- `ProcessBuilder` ile doğrudan argv çalıştırma
-- `--use-json-log --stats 1s` ile gerçek ilerleme
-- SharedPreferences + JSON kart kalıcılığı
-- Uygulama-private `files/rclone/rclone.conf`
-- AlarmManager ile günlük görev zamanlama
+## Android storage
 
-## Mimari kapsam
+`MANAGE_EXTERNAL_STORAGE` gives broad access to shared storage paths, but Android can still restrict areas such as `/Android/data` and `/Android/obb`.
 
-Bu sürüm `arm64-v8a` içindir. Galaxy A34/A72 gibi 64-bit ARM Android cihazlar hedeflenmiştir. Diğer mimariler gerektiğinde CI matrix'e kolayca eklenebilir.
+## Architecture
 
-## Lisans
+- Kotlin
+- Jetpack Compose
+- Foreground `dataSync` service
+- Native ARM64 rclone CLI
+- `ProcessBuilder`
+- JSON stats parsing
+- SharedPreferences + JSON persistence
+- App-private `rclone.conf`
+- AlarmManager scheduling
+- Pinned home-screen shortcuts
+- R8 minification and resource shrinking
 
-Rclone MIT lisanslıdır. Rclone kaynak kodu değiştirilmeden derlenir. `NOTICE.md` dosyasında rclone atfı bulunur.
+## Supported ABI
+
+The current build targets **arm64-v8a**.
+
+## License
+
+Rclone is licensed under the MIT License. See `NOTICE.md` and `RCLONE_LICENSE.txt`.

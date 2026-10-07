@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -101,6 +102,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
@@ -1040,6 +1042,7 @@ private fun SettingsScreen(
     var defaultsDialog by remember { mutableStateOf(false) }
     var clearDataDialog by remember { mutableStateOf(false) }
     var driveConnectDialog by remember { mutableStateOf(false) }
+    var termuxConfigDialog by remember { mutableStateOf(false) }
     var driveRemoteName by remember { mutableStateOf("gdrive") }
     var driveClientId by remember { mutableStateOf("") }
     var driveClientSecret by remember { mutableStateOf("") }
@@ -1060,6 +1063,7 @@ private fun SettingsScreen(
             SettingsGroup("Rclone") {
                 SettingsRow(Icons.Default.Cloud, "Connect Google Drive", "Open Google sign-in in your browser", onClick = { driveConnectDialog = true })
                 SettingsRow(Icons.Default.FileOpen, "rclone.conf", "Import", onClick = onImportConfig)
+                SettingsRow(Icons.Default.Code, "Import from Termux", "Show a copyable command to locate and export rclone.conf", onClick = { termuxConfigDialog = true })
                 SettingsRow(Icons.Default.FileDownload, "rclone.conf", "Export", onClick = onExportConfig)
                 SettingsRow(Icons.Default.Code, "Edit rclone.conf", "Configuration stored inside the app", onClick = {
                     configText = ConfigManager.readText()
@@ -1139,6 +1143,61 @@ private fun SettingsScreen(
                 lineHeight = 14.sp
             )
         }
+    }
+
+    if (termuxConfigDialog) {
+        val clipboard = LocalClipboardManager.current
+        val termuxCommand = "CFG=\"$(rclone config file | tail -n 1)\"\\ncp \"$CFG\" ~/storage/downloads/rclone.conf"
+
+        AlertDialog(
+            onDismissRequest = { termuxConfigDialog = false },
+            containerColor = Surface,
+            title = { Text("Import from Termux") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "If rclone is already configured in Termux, run this command there. It finds the active rclone.conf and copies it to the phone Downloads folder.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                    SelectionContainer {
+                        Text(
+                            termuxCommand,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Amoled)
+                                .border(1.dp, Outline, RoundedCornerShape(14.dp))
+                                .padding(12.dp),
+                            color = Color(0xFF86EFAC),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                    Text(
+                        "Then return here and use rclone.conf > Import to select Download/rclone.conf.",
+                        color = TextDim,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    clipboard.setText(AnnotatedString(termuxCommand))
+                    toast(context, "Command copied.")
+                }) {
+                    Text("Copy command", color = Green)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { termuxConfigDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
     }
 
     if (driveConnectDialog) {

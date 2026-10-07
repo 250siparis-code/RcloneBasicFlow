@@ -1,16 +1,28 @@
-# Doğrulama notları
+# Validation notes
 
-Bu kaynak paketi hazırlanırken aşağıdaki kontroller yapıldı:
+The project is validated through real GitHub Actions Android builds and physical Android installation tests.
 
-- AndroidManifest ve kaynak XML dosyaları XML parser ile doğrulandı.
-- `scripts/build-rclone.sh` için `bash -n` geçti.
-- GitHub Actions YAML dosyası parse edildi.
-- `ShellWords` çok satırlı, ters eğik çizgili ve boşluk içeren UTF-8 yollarla gerçek Kotlin derleyicisinde test edildi.
-- Tüm Kotlin kaynakları Kotlin parser/derleyicisine verildi; Android/Compose classpath bu çalışma ortamında bulunmadığı için beklenen `unresolved reference` hataları oluştu, fakat sözdizimi (`expecting`, kapanmamış blok vb.) hatası görülmedi.
-- Rclone Android ARM64 derleme yöntemi, rclone'un kendi GitHub build workflow'undaki `GOOS=android`, `GOARCH=arm64`, `CGO_ENABLED=1`, NDK clang ve `-tags android` yöntemiyle aynı mimariye göre yazıldı.
+Development checks include:
 
-## Henüz burada yapılamayan tek doğrulama
+- AndroidManifest and XML resource parsing
+- `bash -n` validation for `scripts/build-rclone.sh`
+- GitHub Actions workflow parsing
+- Android SDK / NDK setup in GitHub Actions
+- ARM64 rclone native compilation
+- Kotlin / Jetpack Compose compilation
+- APK packaging
+- Physical device installation
+- Real rclone task execution tests
+- Iterative fixes from GitHub Actions and device runtime logs
 
-Bu çalışma ortamında Android SDK/Gradle bağımlılıkları ve ağ erişimi tam bir Android APK build'i için hazır değil. Bu yüzden son `assembleDebug` + fiziksel cihaz kurulum testi burada çalıştırılmadı.
+## Current build strategy
 
-Projede `.github/workflows/android.yml` bunun için hazırdır. GitHub Actions ilk build'i gerçek Android/Compose derlemesini ve rclone ARM64 native binary derlemesini yapacaktır. İlk cihaz testinden çıkan gerçek bir hata olursa workflow loguyla düzeltilmelidir.
+CI builds:
+
+- Android app for `arm64-v8a`
+- rclone v1.75.1
+- Google Drive + local rclone backends only
+- Minified release APK
+- Android resource shrinking
+
+Runtime behavior should still be re-tested after major changes because storage permissions, OAuth callbacks, foreground services and launcher shortcuts can vary across Android versions and launchers.
