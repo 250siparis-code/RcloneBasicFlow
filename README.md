@@ -13,7 +13,7 @@
   <img alt="rclone" src="https://img.shields.io/badge/rclone-v1.75.1-3F79AD">
   <img alt="ABI" src="https://img.shields.io/badge/ABI-arm64--v8a-6B7280">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-22C55E">
-  <img alt="Build" src="https://github.com/250siparis-code/RcloneCards/actions/workflows/android.yml/badge.svg">
+  <img alt="Build" src="https://github.com/250siparis-code/RcloneBasicFlow/actions/workflows/android.yml/badge.svg">
 </p>
 
 > **Current cloud scope:** Google Drive only. Local Android storage is supported as a source or destination. Other rclone cloud backends are intentionally not bundled yet.
