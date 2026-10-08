@@ -19,7 +19,6 @@ import androidx.core.content.ContextCompat
 import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
 import dev.galaxy.rclonecards.data.FullBackupManager
-import dev.galaxy.rclonecards.engine.DriveConnector
 import dev.galaxy.rclonecards.engine.ShortcutIconFactory
 import dev.galaxy.rclonecards.model.TaskCard
 import dev.galaxy.rclonecards.service.RcloneService
@@ -131,28 +130,10 @@ class MainActivity : ComponentActivity() {
                     externalNavigation = externalNavigation,
                     onImportConfig = { importConfigLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) },
                     onExportConfig = { exportConfigLauncher.launch("rclone.conf") },
-                    onConnectGoogleDrive = { remoteName, clientId, clientSecret, scope, rootFolderId, serviceAccountFile, teamDrive ->
-                        DriveConnector.connect(
-                            activity = this,
-                            remoteName = remoteName,
-                            clientId = clientId,
-                            clientSecret = clientSecret,
-                            scope = scope,
-                            rootFolderId = rootFolderId,
-                            serviceAccountFile = serviceAccountFile,
-                            teamDrive = teamDrive
-                        ) { result ->
-                            result.onSuccess { name ->
-                                Toast.makeText(this, "$name connected", Toast.LENGTH_LONG).show()
-                            }.onFailure { error ->
-                                Toast.makeText(this, "Google Drive connection failed: ${error.message}", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    },
                     onImportCards = { importCardsLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
-                    onExportCards = { exportCardsLauncher.launch("rclone-cards-backup.json") },
+                    onExportCards = { exportCardsLauncher.launch("basic-rclone-flow-cards.json") },
                     onImportFullBackup = { importFullBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
-                    onExportFullBackup = { exportFullBackupLauncher.launch("rclone-cards-full-backup.json") },
+                    onExportFullBackup = { exportFullBackupLauncher.launch("basic-rclone-flow-full-backup.json") },
                     onRequestAllFiles = { requestAllFilesAccess() },
                     onRequestNotification = { requestNotificationPermission() },
                     onRequestExactAlarm = { requestExactAlarmPermission() },
@@ -172,6 +153,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        val deepLink = intent?.data
+        if (deepLink?.scheme == "basic-rclone-flow" && deepLink.host == "oauth") {
+            val status = deepLink.getQueryParameter("status").orEmpty().ifBlank { "return" }
+            externalNavigation.value = "oauth:$status"
+        }
+
         val runId = intent?.getStringExtra(EXTRA_RUN_CARD_ID)
         if (!runId.isNullOrBlank()) {
             startRclone(runId)

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -33,16 +34,22 @@ data class RcloneConfigQuestion(
 
 data class RcloneConfigStep(
     val done: Boolean,
-    val question: RcloneConfigQuestion? = null
+    val question: RcloneConfigQuestion? = null,
+    val verified: Boolean = false,
+    val verificationMessage: String = ""
 )
 
 object RcloneConfigWizard {
     private const val RC_ADDR = "127.0.0.1:5572"
     private const val RC_URL = "http://127.0.0.1:5572"
+    private const val OAUTH_TEMPLATE_ASSET = "oauth-template.html"
     private val serverLock = Any()
 
     @Volatile
     private var serverProcess: Process? = null
+
+    @Volatile
+    private var pendingRemoteName: String? = null
 
     suspend fun startDrive(
         activity: Activity,
@@ -52,10 +59,15 @@ object RcloneConfigWizard {
             ensureServer(activity)
 
             val name = sanitizeRemoteName(remoteName)
+            require(!ConfigManager.hasRemote(name)) {
+                "Remote '$name' already exists. Delete it or choose another name in Manage Google Drive."
+            }
+            pendingRemoteName = name
+
             val payload = JSONObject().apply {
                 put("name", name)
                 put("type", "drive")
-                put("parameters", JSONObject())
+                put("parameters", configParameters(activity))
                 put("opt", JSONObject().apply {
                     put("nonInteractive", true)
                     put("all", true)
@@ -63,19 +75,17 @@ object RcloneConfigWizard {
                 })
             }
 
-            val step = parseStep(
-                callConfigWithOAuth(
-                    activity = activity,
-                    endpoint = "config/create",
-                    payload = payload
+            finalizeIfDone(
+                activity = activity,
+                remoteName = name,
+                step = parseStep(
+                    callConfigWithOAuth(
+                        activity = activity,
+                        endpoint = "config/create",
+                        payload = payload
+                    )
                 )
             )
-            if (step.done) {
-                require(ConfigManager.hasRemote(name)) {
-                    "rclone finished but the remote was not written to rclone.conf."
-                }
-            }
-            step
         }
     }
 
@@ -91,7 +101,7 @@ object RcloneConfigWizard {
             val name = sanitizeRemoteName(remoteName)
             val payload = JSONObject().apply {
                 put("name", name)
-                put("parameters", JSONObject())
+                put("parameters", configParameters(activity))
                 put("opt", JSONObject().apply {
                     put("nonInteractive", true)
                     put("all", true)
@@ -102,29 +112,110 @@ object RcloneConfigWizard {
                 })
             }
 
-            val step = parseStep(
-                callConfigWithOAuth(
-                    activity = activity,
-                    endpoint = "config/update",
-                    payload = payload
+            finalizeIfDone(
+                activity = activity,
+                remoteName = name,
+                step = parseStep(
+                    callConfigWithOAuth(
+                        activity = activity,
+                        endpoint = "config/update",
+                        payload = payload
+                    )
                 )
             )
-            if (step.done) {
-                require(ConfigManager.hasRemote(name)) {
-                    "rclone finished but the remote was not written to rclone.conf."
-                }
+        }
+    }
+
+    suspend fun verifyDrive(
+        activity: Activity,
+        remoteName: String
+    ): Result<RcloneConfigStep> = withContext(Dispatchers.IO) {
+        runCatching {
+            val name = sanitizeRemoteName(remoteName)
+            require(ConfigManager.hasRemote(name)) {
+                "Remote '$name' was not written to rclone.conf."
             }
-            step
+            verifyCompletedRemote(activity, name)
         }
     }
 
     suspend fun cancel(activity: Activity) = withContext(Dispatchers.IO) {
         runCatching { rcCall(activity, "config/oauthstop", JSONObject(), 5) }
+        pendingRemoteName?.let { name ->
+            if (ConfigManager.hasRemote(name)) {
+                ConfigManager.deleteRemote(name)
+            }
+        }
+        pendingRemoteName = null
         stopServer(activity)
     }
 
     suspend fun finish(activity: Activity) = withContext(Dispatchers.IO) {
+        pendingRemoteName = null
         stopServer(activity)
+    }
+
+    private fun configParameters(activity: Activity): JSONObject =
+        JSONObject().apply {
+            put("config_template_file", ensureOAuthTemplate(activity).absolutePath)
+        }
+
+    private fun ensureOAuthTemplate(activity: Activity): File {
+        val directory = ConfigManager.configFile.parentFile
+            ?: error("rclone configuration directory is unavailable.")
+        directory.mkdirs()
+
+        val destination = File(directory, OAUTH_TEMPLATE_ASSET)
+        activity.assets.open(OAUTH_TEMPLATE_ASSET).use { input ->
+            destination.outputStream().use { output -> input.copyTo(output) }
+        }
+        return destination
+    }
+
+    private fun finalizeIfDone(
+        activity: Activity,
+        remoteName: String,
+        step: RcloneConfigStep
+    ): RcloneConfigStep {
+        if (!step.done) return step
+        require(ConfigManager.hasRemote(remoteName)) {
+            "rclone finished but the remote was not written to rclone.conf."
+        }
+        return verifyCompletedRemote(activity, remoteName)
+    }
+
+    private fun verifyCompletedRemote(
+        activity: Activity,
+        remoteName: String
+    ): RcloneConfigStep {
+        val verification = RcloneEngine.testRemote(
+            context = activity,
+            remoteName = remoteName,
+            timeoutSeconds = 45
+        )
+
+        return verification.fold(
+            onSuccess = {
+                RcloneConfigStep(
+                    done = true,
+                    verified = true,
+                    verificationMessage = "Google Drive connection verified."
+                )
+            },
+            onFailure = { error ->
+                RcloneConfigStep(
+                    done = true,
+                    verified = false,
+                    verificationMessage = buildString {
+                        append("Configuration was saved, but the live Google Drive test failed.")
+                        error.message?.takeIf { it.isNotBlank() }?.let {
+                            append(" ")
+                            append(it)
+                        }
+                    }
+                )
+            }
+        )
     }
 
     private fun sanitizeRemoteName(value: String): String {
@@ -165,7 +256,7 @@ object RcloneConfigWizard {
             }
 
             var ready = false
-            repeat(50) {
+            for (attempt in 0 until 50) {
                 if (!process.isAlive) {
                     error("rclone RC server stopped before becoming ready.")
                 }
@@ -176,7 +267,7 @@ object RcloneConfigWizard {
 
                 if (probe != null) {
                     ready = true
-                    return@repeat
+                    break
                 }
 
                 Thread.sleep(100)
@@ -201,13 +292,8 @@ object RcloneConfigWizard {
             process.waitFor(1200, TimeUnit.MILLISECONDS)
         }
 
-        if (process.isAlive) {
-            process.destroy()
-        }
-        if (process.isAlive) {
-            process.destroyForcibly()
-        }
-
+        if (process.isAlive) process.destroy()
+        if (process.isAlive) process.destroyForcibly()
         serverProcess = null
     }
 
@@ -231,9 +317,7 @@ object RcloneConfigWizard {
 
         val reader = thread(name = "rclone-config-call-output") {
             process.inputStream.bufferedReader().useLines { lines ->
-                lines.forEach { line ->
-                    output.appendLine(line)
-                }
+                lines.forEach { line -> output.appendLine(line) }
             }
         }
 
@@ -250,10 +334,7 @@ object RcloneConfigWizard {
                     )
 
                     val authUrl = status.optString("authUrl", "")
-                    if (
-                        authUrl.isNotBlank() &&
-                        browserOpened.compareAndSet(false, true)
-                    ) {
+                    if (authUrl.isNotBlank() && browserOpened.compareAndSet(false, true)) {
                         activity.runOnUiThread {
                             activity.startActivity(
                                 Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
@@ -323,8 +404,8 @@ object RcloneConfigWizard {
         activity: Activity,
         endpoint: String,
         payload: JSONObject
-    ): Process {
-        return ProcessBuilder(
+    ): Process =
+        ProcessBuilder(
             RcloneEngine.binary(activity).absolutePath,
             "rc",
             "--url", RC_URL,
@@ -333,7 +414,6 @@ object RcloneConfigWizard {
         )
             .redirectErrorStream(true)
             .start()
-    }
 
     private fun parseStep(response: JSONObject): RcloneConfigStep {
         val state = response.optString("State", "")
@@ -361,28 +441,26 @@ object RcloneConfigWizard {
             }
             .orEmpty()
 
-        val question = RcloneConfigQuestion(
-            state = state,
-            name = option.optString("Name", "rclone option"),
-            help = option.optString("Help", ""),
-            defaultValue = jsonValueToString(option.opt("Default")),
-            defaultString = option.optString("DefaultStr", ""),
-            examples = examples,
-            required = option.optBoolean("Required", false),
-            isPassword = option.optBoolean("IsPassword", false),
-            type = option.optString("Type", "string"),
-            exclusive = option.optBoolean("Exclusive", false),
-            error = response.optString("Error", "")
-        )
-
         return RcloneConfigStep(
             done = false,
-            question = question
+            question = RcloneConfigQuestion(
+                state = state,
+                name = option.optString("Name", "rclone option"),
+                help = option.optString("Help", ""),
+                defaultValue = jsonValueToString(option.opt("Default")),
+                defaultString = option.optString("DefaultStr", ""),
+                examples = examples,
+                required = option.optBoolean("Required", false),
+                isPassword = option.optBoolean("IsPassword", false),
+                type = option.optString("Type", "string"),
+                exclusive = option.optBoolean("Exclusive", false),
+                error = response.optString("Error", "")
+            )
         )
     }
 
-    private fun jsonValueToString(value: Any?): String {
-        return when (value) {
+    private fun jsonValueToString(value: Any?): String =
+        when (value) {
             null, JSONObject.NULL -> ""
             is Boolean -> value.toString()
             is Number -> value.toString()
@@ -394,14 +472,11 @@ object RcloneConfigWizard {
             }.joinToString(",")
             else -> value.toString()
         }
-    }
 
     private fun parseJsonObject(raw: String): JSONObject? {
         if (raw.isBlank()) return null
 
-        runCatching {
-            return JSONObject(raw)
-        }
+        runCatching { return JSONObject(raw) }
 
         val objects = mutableListOf<String>()
         var start = -1
@@ -448,9 +523,7 @@ object RcloneConfigWizard {
         return objects
             .asReversed()
             .asSequence()
-            .mapNotNull { candidate ->
-                runCatching { JSONObject(candidate) }.getOrNull()
-            }
+            .mapNotNull { candidate -> runCatching { JSONObject(candidate) }.getOrNull() }
             .firstOrNull()
     }
 }

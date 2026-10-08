@@ -32,7 +32,7 @@ object ConfigManager {
 
     fun writeText(text: String) {
         ensureConfigExists()
-        configFile.writeText(text)
+        configFile.writeText(text.replace("\r\n", "\n"))
     }
 
     fun importFromUri(context: Context, uri: Uri): Result<Unit> = runCatching {
@@ -47,74 +47,107 @@ object ConfigManager {
             ?: error("File could not be written")
     }
 
-    fun hasRemote(name: String): Boolean {
-        val wanted = name.trim().removeSuffix(":")
-        if (wanted.isBlank()) return false
+    fun hasRemote(name: String): Boolean = sectionBounds(name) != null
 
-        return readText()
+    fun remoteNames(): List<String> =
+        readText()
             .lineSequence()
             .map { it.trim() }
-            .any { line ->
-                line.startsWith("[") &&
-                    line.endsWith("]") &&
-                    line.substring(1, line.length - 1).equals(wanted, ignoreCase = true)
-            }
+            .filter { it.startsWith("[") && it.endsWith("]") && it.length > 2 }
+            .map { it.substring(1, it.length - 1) }
+            .distinct()
+            .toList()
+
+    fun driveRemoteNames(): List<String> =
+        remoteNames().filter { remoteType(it).equals("drive", ignoreCase = true) }
+
+    fun remoteType(name: String): String =
+        readRemoteBlock(name)
+            ?.lineSequence()
+            ?.map { it.trim() }
+            ?.firstOrNull { it.startsWith("type", ignoreCase = true) && it.contains("=") }
+            ?.substringAfter("=")
+            ?.trim()
+            .orEmpty()
+
+    fun readRemoteBlock(name: String): String? {
+        val lines = readText().lines()
+        val bounds = sectionBounds(lines, name) ?: return null
+        return lines.subList(bounds.first, bounds.second).joinToString("\n").trimEnd()
     }
 
-    fun upsertDriveRemote(
-        remoteName: String,
-        clientId: String,
-        clientSecret: String,
-        scope: String,
-        rootFolderId: String,
-        serviceAccountFile: String,
-        teamDrive: String,
-        tokenJson: String
-    ) {
-        val name = remoteName.trim().ifBlank { "gdrive" }
-        require(!name.contains('[') && !name.contains(']') && !name.contains('\n') && !name.contains('\r')) {
-            "Invalid remote name"
+    fun replaceRemoteBlock(name: String, block: String): Result<Unit> = runCatching {
+        val wanted = sanitizeRemoteName(name)
+        val normalized = block.replace("\r\n", "\n").trim()
+        require(normalized.isNotBlank()) { "Remote configuration cannot be empty." }
+
+        val blockLines = normalized.lines()
+        require(blockLines.firstOrNull()?.trim()?.equals("[$wanted]", ignoreCase = true) == true) {
+            "The first line must remain [$wanted]."
+        }
+        require(
+            blockLines.any {
+                it.trim().startsWith("type", ignoreCase = true) &&
+                    it.substringAfter("=", "").trim().equals("drive", ignoreCase = true)
+            }
+        ) {
+            "Basic Rclone Flow currently supports Google Drive remotes only (type = drive)."
         }
 
-        val header = "[$name]"
-        val kept = mutableListOf<String>()
-        var skipping = false
+        val lines = readText().lines().toMutableList()
+        val bounds = sectionBounds(lines, wanted) ?: error("Remote '$wanted' was not found.")
+        val next = buildList {
+            addAll(lines.subList(0, bounds.first))
+            addAll(blockLines)
+            addAll(lines.subList(bounds.second, lines.size))
+        }
+        writeText(next.joinToString("\n").trimEnd() + "\n")
+    }
 
-        readText().lines().forEach { line ->
+    fun deleteRemote(name: String): Result<Unit> = runCatching {
+        val wanted = sanitizeRemoteName(name)
+        val lines = readText().lines().toMutableList()
+        val bounds = sectionBounds(lines, wanted) ?: error("Remote '$wanted' was not found.")
+        val next = buildList {
+            addAll(lines.subList(0, bounds.first))
+            addAll(lines.subList(bounds.second, lines.size))
+        }
+        val cleaned = next.joinToString("\n")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+        writeText(if (cleaned.isBlank()) "" else "$cleaned\n")
+    }
+
+    private fun sectionBounds(name: String): Pair<Int, Int>? =
+        sectionBounds(readText().lines(), name)
+
+    private fun sectionBounds(lines: List<String>, name: String): Pair<Int, Int>? {
+        val wanted = sanitizeRemoteName(name)
+        val start = lines.indexOfFirst { line ->
             val trimmed = line.trim()
+            trimmed.startsWith("[") &&
+                trimmed.endsWith("]") &&
+                trimmed.substring(1, trimmed.length - 1).equals(wanted, ignoreCase = true)
+        }
+        if (start < 0) return null
+
+        var end = lines.size
+        for (index in start + 1 until lines.size) {
+            val trimmed = lines[index].trim()
             if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-                if (trimmed == header) {
-                    skipping = true
-                    return@forEach
-                }
-                skipping = false
+                end = index
+                break
             }
-            if (!skipping) kept += line
         }
-
-        while (kept.isNotEmpty() && kept.last().isBlank()) kept.removeAt(kept.lastIndex)
-
-        val block = buildString {
-            appendLine(header)
-            appendLine("type = drive")
-            if (clientId.isNotBlank()) appendLine("client_id = ${clientId.trim()}")
-            if (clientSecret.isNotBlank()) appendLine("client_secret = ${clientSecret.trim()}")
-            appendLine("scope = ${scope.trim().ifBlank { "drive" }}")
-            if (rootFolderId.isNotBlank()) appendLine("root_folder_id = ${rootFolderId.trim()}")
-            if (serviceAccountFile.isNotBlank()) appendLine("service_account_file = ${serviceAccountFile.trim()}")
-            if (teamDrive.isNotBlank()) appendLine("team_drive = ${teamDrive.trim()}")
-            if (tokenJson.isNotBlank()) appendLine("token = ${tokenJson.trim()}")
-        }.trimEnd()
-
-        val next = buildString {
-            if (kept.isNotEmpty()) {
-                append(kept.joinToString("\n").trimEnd())
-                append("\n\n")
-            }
-            append(block)
-            append('\n')
-        }
-        writeText(next)
+        return start to end
     }
 
+    private fun sanitizeRemoteName(value: String): String {
+        val name = value.trim().removeSuffix(":")
+        require(name.isNotBlank()) { "Remote name is empty." }
+        require(name.none { it == '[' || it == ']' || it == '\n' || it == '\r' || it == ':' }) {
+            "Invalid remote name."
+        }
+        return name
+    }
 }

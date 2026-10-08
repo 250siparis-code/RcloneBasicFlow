@@ -1,74 +1,51 @@
-# Build the APK using only a phone
+# Build Basic Rclone Flow using only a phone
 
-A PC is not required. GitHub Actions can build the APK entirely in the cloud.
+A PC is not required. GitHub Actions builds the Android APK in the cloud.
 
-## 1. Create a GitHub repository
-
-Create a repository such as `RcloneCards`.
-
-## 2. Push the project
-
-From Termux:
+## Push changes
 
 ```bash
 cd ~/RcloneCards
-git init
-git branch -M main
 git add .
-git commit -m "Initial RcloneCards Android app"
-gh auth login --hostname github.com --git-protocol https --web
-gh auth setup-git
-git remote add origin https://github.com/YOUR-USER/RcloneCards.git
-git push -u origin main
+git commit -m "Update Basic Rclone Flow"
+git push
 ```
-
-## 3. Build automatically
 
 Every push to `main` starts:
 
 ```text
-Actions > Build Android APK
+Actions → Build Basic Rclone Flow
 ```
 
-You can also start it manually with **Run workflow**.
+## Download
 
-## 4. Download the APK
-
-When the run is green, open:
+When the workflow is green, download:
 
 ```text
-Artifacts > RcloneCards-arm64-minified
+Basic-Rclone-Flow-v1.1.0-beta-arm64
 ```
 
-Extract and install:
+Extract the ZIP and install `app-release.apk`.
 
-```text
-app-release.apk
-```
+## First launch
 
-## 5. First launch
+1. Open **Settings**.
+2. Grant **All files access** if your cards use local shared-storage paths.
+3. Grant **Notifications** for foreground transfer status.
+4. Open **Google Drive Setup**.
+5. Complete the questions returned by rclone.
+6. Approve Google OAuth in the browser.
+7. Return to the app; Basic Rclone Flow performs a live Drive check before reporting the remote as verified.
 
-In the app:
+The current build intentionally supports Google Drive as the only cloud provider.
 
-- Grant **All files access**
-- Grant **Notifications**
-- Connect Google Drive, or import an existing `rclone.conf`
-
-### Import from Termux
-
-Run:
+## Existing Termux rclone config
 
 ```bash
 CFG="$(rclone config file | tail -n 1)"
 cp "$CFG" ~/storage/downloads/rclone.conf
 ```
 
-Then select:
+Then use **Settings → Rclone → Import rclone.conf**.
 
-```text
-Settings > Rclone > rclone.conf > Import
-```
-
-## If a build fails
-
-Open the failed GitHub Actions run and inspect the first failed step. The job log normally contains the exact Gradle, Kotlin, Android SDK or native-build error.
+Never commit `rclone.conf` or a full-app backup to GitHub. Both can contain OAuth credentials.

@@ -14,6 +14,8 @@ import java.util.UUID
 object CardStore {
     private const val PREFS = "rclone_cards"
     private const val KEY_CARDS = "cards_json"
+    private const val KEY_LEGACY_SAMPLES_REMOVED = "legacy_sample_cards_removed_v2"
+    private val LEGACY_SAMPLE_IDS = setOf("ga34-internal", "camera-backup")
 
     private lateinit var appContext: Context
     private val _cards = MutableStateFlow<List<TaskCard>>(emptyList())
@@ -22,9 +24,18 @@ object CardStore {
     fun init(context: Context) {
         if (::appContext.isInitialized) return
         appContext = context.applicationContext
-        val loaded = load()
-        _cards.value = if (loaded.isEmpty()) defaultCards() else loaded
-        if (loaded.isEmpty()) persist(_cards.value)
+
+        val prefs = prefs()
+        val loaded = if (prefs.contains(KEY_CARDS)) load() else emptyList()
+        val migrated = if (!prefs.getBoolean(KEY_LEGACY_SAMPLES_REMOVED, false)) {
+            loaded.filterNot { it.id in LEGACY_SAMPLE_IDS }
+        } else {
+            loaded
+        }
+
+        _cards.value = migrated
+        persist(migrated)
+        prefs.edit().putBoolean(KEY_LEGACY_SAMPLES_REMOVED, true).apply()
     }
 
     fun get(id: String): TaskCard? = _cards.value.firstOrNull { it.id == id }
@@ -33,9 +44,9 @@ object CardStore {
         val card = TaskCard(
             id = UUID.randomUUID().toString(),
             title = "New Task",
-            subtitle = "Custom Command",
+            subtitle = "",
             actionLabel = "Run",
-            command = "rclone copy \"/storage/emulated/0/Download/\" \"gdrive:Yedek/\" --progress",
+            command = "",
             workDir = "/storage/emulated/0/",
             color = CardColor.GREEN,
             icon = CardIcon.FOLDER
@@ -58,6 +69,11 @@ object CardStore {
         persist(next)
     }
 
+    fun clearAll() {
+        _cards.value = emptyList()
+        persist(emptyList())
+    }
+
     fun duplicate(id: String): TaskCard? {
         val source = get(id) ?: return null
         val copy = source.copy(
@@ -71,13 +87,8 @@ object CardStore {
         return copy
     }
 
-    /** JSON yedeği: kartların tamamını ve zamanlayıcı ayarlarını taşır. */
     fun exportJson(): String = serialize(_cards.value).toString(2)
 
-    /**
-     * JSON yedeğini yükler. Kimliği boş/tekrarlı kartlara yeni UUID verir.
-     * Başarılı dönüş değeri yüklenen kart sayısıdır.
-     */
     fun importJson(raw: String): Result<Int> = runCatching {
         val arr = JSONArray(raw)
         val parsed = parse(arr)
@@ -93,12 +104,6 @@ object CardStore {
         _cards.value = sanitized
         persist(sanitized)
         sanitized.size
-    }
-
-    fun resetDefaults() {
-        val defaults = defaultCards()
-        _cards.value = defaults
-        persist(defaults)
     }
 
     private fun prefs() = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -145,13 +150,15 @@ object CardStore {
                     title = o.optString("title", "Task"),
                     subtitle = o.optString("subtitle", ""),
                     actionLabel = o.optString("actionLabel", "Run"),
-                    command = o.optString("command", "rclone version"),
+                    command = o.optString("command", ""),
                     workDir = o.optString("workDir", "/storage/emulated/0/"),
-                    color = runCatching { CardColor.valueOf(o.optString("color", "GREEN")) }.getOrDefault(CardColor.GREEN),
+                    color = runCatching { CardColor.valueOf(o.optString("color", "GREEN")) }
+                        .getOrDefault(CardColor.GREEN),
                     customColorHex = o.optString("customColorHex", ""),
                     iconAlpha = o.optDouble("iconAlpha", 1.0).toFloat().coerceIn(0.15f, 1f),
                     customIconPath = o.optString("customIconPath", ""),
-                    icon = runCatching { CardIcon.valueOf(o.optString("icon", "PHONE")) }.getOrDefault(CardIcon.PHONE),
+                    icon = runCatching { CardIcon.valueOf(o.optString("icon", "PHONE")) }
+                        .getOrDefault(CardIcon.PHONE),
                     transfers = if (o.isNull("transfers")) null else o.optInt("transfers").coerceIn(1, 64),
                     checkers = if (o.isNull("checkers")) null else o.optInt("checkers").coerceIn(1, 128),
                     bwlimit = o.optString("bwlimit", ""),
@@ -162,27 +169,4 @@ object CardStore {
             )
         }
     }
-
-    private fun defaultCards(): List<TaskCard> = listOf(
-        TaskCard(
-            id = "ga34-internal",
-            title = "G.A34",
-            subtitle = "Internal Storage",
-            actionLabel = "Sync to Drive",
-            command = "rclone sync \"/storage/emulated/0/\" \"gdrive:G.A34/Dahili Hafıza/\" --exclude \"/Android/**\" --progress",
-            workDir = "/storage/emulated/0/",
-            color = CardColor.GREEN,
-            icon = CardIcon.PHONE
-        ),
-        TaskCard(
-            id = "camera-backup",
-            title = "Camera",
-            subtitle = "DCIM / Camera",
-            actionLabel = "Back Up to Drive",
-            command = "rclone copy \"/storage/emulated/0/DCIM/Camera/\" \"gdrive:G.A34/Dahili Hafıza/DCIM/Camera/\" --progress",
-            workDir = "/storage/emulated/0/DCIM/Camera/",
-            color = CardColor.PURPLE,
-            icon = CardIcon.CAMERA
-        )
-    )
 }

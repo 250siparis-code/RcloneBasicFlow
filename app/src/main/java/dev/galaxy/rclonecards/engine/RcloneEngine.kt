@@ -104,13 +104,34 @@ object RcloneEngine {
         }
         readerThread.join(1000)
         val text = output.toString().trim()
-        if (process.exitValue() != 0) error(text.ifBlank { "rclone hata kodu: ${process.exitValue()}" })
+        if (process.exitValue() != 0) error(text.ifBlank { "rclone exit code: ${process.exitValue()}" })
         text
     }
 
     fun version(context: Context): String = runQuick(context, listOf("version"), 10)
         .getOrElse { "Rclone not found" }
         .lineSequence().firstOrNull().orEmpty()
+
+    fun testRemote(
+        context: Context,
+        remoteName: String,
+        timeoutSeconds: Long = 45
+    ): Result<String> = runCatching {
+        val name = remoteName.trim().removeSuffix(":")
+        require(Regex("^[A-Za-z0-9._-]+$").matches(name)) { "Invalid remote name." }
+        require(ConfigManager.hasRemote(name)) { "Remote '$name' is not configured." }
+        require(ConfigManager.remoteType(name).equals("drive", ignoreCase = true)) {
+            "Only Google Drive remotes are supported in this version."
+        }
+
+        runQuick(
+            context = context,
+            argsAfterRclone = listOf("lsd", "$name:"),
+            timeoutSeconds = timeoutSeconds
+        ).getOrThrow()
+
+        "Google Drive connection verified."
+    }
 
     fun listRemotes(context: Context): List<String> {
         val raw = runQuick(context, listOf("listremotes", "--long", "--json"), 20).getOrNull().orEmpty().trim()

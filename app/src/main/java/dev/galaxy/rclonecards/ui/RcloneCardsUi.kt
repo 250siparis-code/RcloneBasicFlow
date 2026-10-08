@@ -63,7 +63,6 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
@@ -204,7 +203,6 @@ fun RcloneCardsRoot(
     externalNavigation: StateFlow<String?>,
     onImportConfig: () -> Unit,
     onExportConfig: () -> Unit,
-    onConnectGoogleDrive: (String, String, String, String, String, String, String) -> Unit,
     onImportCards: () -> Unit,
     onExportCards: () -> Unit,
     onImportFullBackup: () -> Unit,
@@ -228,8 +226,13 @@ fun RcloneCardsRoot(
 
     LaunchedEffect(external) {
         val value = external ?: return@LaunchedEffect
-        if (value.startsWith("detail:")) {
-            screen = Screen.Detail(value.substringAfter("detail:"))
+        when {
+            value.startsWith("detail:") -> {
+                screen = Screen.Detail(value.substringAfter("detail:"))
+            }
+            value.startsWith("oauth:") -> {
+                screen = Screen.Settings
+            }
         }
     }
 
@@ -296,7 +299,6 @@ fun RcloneCardsRoot(
                 onBack = { screen = Screen.Home },
                 onImportConfig = onImportConfig,
                 onExportConfig = onExportConfig,
-                onConnectGoogleDrive = onConnectGoogleDrive,
                 onImportCards = onImportCards,
                 onExportCards = onExportCards,
                 onImportFullBackup = onImportFullBackup,
@@ -566,18 +568,6 @@ private fun TaskCardItem(
                         )
                     }
 
-                    completed -> Box(
-                        Modifier.size(44.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.DoneAll,
-                            null,
-                            tint = Green,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
                     else -> IconButton(
                         onClick = onRun,
                         modifier = Modifier
@@ -587,7 +577,7 @@ private fun TaskCardItem(
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
-                            if (error) "Run again" else "Run",
+                            if (error || completed) "Run again" else "Run",
                             tint = iconTint,
                             modifier = Modifier.size(29.dp)
                         )
@@ -1425,7 +1415,6 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     onImportConfig: () -> Unit,
     onExportConfig: () -> Unit,
-    onConnectGoogleDrive: (String, String, String, String, String, String, String) -> Unit,
     onImportCards: () -> Unit,
     onExportCards: () -> Unit,
     onImportFullBackup: () -> Unit,
@@ -1438,10 +1427,14 @@ private fun SettingsScreen(
     canExactAlarm: () -> Boolean
 ) {
     val context = LocalContext.current
+    val settingsScope = rememberCoroutineScope()
     var resumeTick by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
+
     DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) resumeTick++ }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeTick++
+        }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
@@ -1457,24 +1450,24 @@ private fun SettingsScreen(
     var rcloneVersion by remember { mutableStateOf("Checking...") }
     var remotes by remember { mutableStateOf<List<String>>(emptyList()) }
     var remotesDialog by remember { mutableStateOf(false) }
-    var configDialog by remember { mutableStateOf(false) }
-    var configText by remember { mutableStateOf("") }
-    var resetCardsDialog by remember { mutableStateOf(false) }
+    var remoteBusyName by remember { mutableStateOf<String?>(null) }
+    var remoteActionMessage by remember { mutableStateOf("") }
+    var remoteEditName by remember { mutableStateOf<String?>(null) }
+    var remoteEditText by remember { mutableStateOf("") }
+    var deleteRemoteName by remember { mutableStateOf<String?>(null) }
+
+    var clearCardsDialog by remember { mutableStateOf(false) }
     var defaultsDialog by remember { mutableStateOf(false) }
     var clearDataDialog by remember { mutableStateOf(false) }
+
     var driveSetupDialog by remember { mutableStateOf(false) }
     var driveStep by remember { mutableStateOf<RcloneConfigStep?>(null) }
     var driveAnswer by remember { mutableStateOf("") }
     var driveBusy by remember { mutableStateOf(false) }
     var driveWizardError by remember { mutableStateOf<String?>(null) }
-    var termuxConfigDialog by remember { mutableStateOf(false) }
     var driveRemoteName by remember { mutableStateOf("gdrive") }
-    var driveClientId by remember { mutableStateOf("") }
-    var driveClientSecret by remember { mutableStateOf("") }
-    var driveScope by remember { mutableStateOf("drive") }
-    var driveRootFolderId by remember { mutableStateOf("") }
-    var driveServiceAccountFile by remember { mutableStateOf("") }
-    var driveTeamDrive by remember { mutableStateOf("") }
+
+    var termuxConfigDialog by remember { mutableStateOf(false) }
     var aboutDialog by remember { mutableStateOf(false) }
     var defaultsTransfersText by remember { mutableStateOf(defaultTransfers.toString()) }
     var defaultsCheckersText by remember { mutableStateOf(defaultCheckers.toString()) }
@@ -1489,10 +1482,16 @@ private fun SettingsScreen(
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     dest.outputStream().use { output -> input.copyTo(output) }
                 } ?: error("Service Account JSON could not be read.")
-                driveServiceAccountFile = dest.absolutePath
+                driveAnswer = dest.absolutePath
             }.onFailure {
-                toast(context, "Service Account import failed: ${it.message}")
+                driveWizardError = "Service Account import failed: ${it.message}"
             }
+        }
+    }
+
+    fun refreshRemotes() {
+        settingsScope.launch {
+            remotes = withContext(Dispatchers.IO) { ConfigManager.driveRemoteNames() }
         }
     }
 
@@ -1502,15 +1501,20 @@ private fun SettingsScreen(
 
     Column(Modifier.fillMaxSize().background(Amoled)) {
         TopBar(title = "Settings", onBack = onBack)
+
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = 40.dp),
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            SettingsGroup("Rclone") {
+            SettingsGroup("Google Drive") {
                 SettingsRow(
                     Icons.Default.Cloud,
                     "Google Drive Setup",
-                    "Run the real rclone config flow inside this screen",
+                    "Native rclone RC setup with OAuth and live connection verification",
                     onClick = {
                         driveStep = null
                         driveAnswer = ""
@@ -1518,21 +1522,46 @@ private fun SettingsScreen(
                         driveSetupDialog = true
                     }
                 )
-                SettingsRow(Icons.Default.FileOpen, "rclone.conf", "Import", onClick = onImportConfig)
-                SettingsRow(Icons.Default.Code, "Import from Termux", "Show a copyable command to locate and export rclone.conf", onClick = { termuxConfigDialog = true })
-                SettingsRow(Icons.Default.FileDownload, "rclone.conf", "Export", onClick = onExportConfig)
-                SettingsRow(Icons.Default.Code, "Edit rclone.conf", "Configuration stored inside the app", onClick = {
-                    configText = ConfigManager.readText()
-                    configDialog = true
-                })
-                SettingsRow(Icons.Default.Cloud, "Manage Remotes", "View connected remotes / edit config", onClick = {
-                    remotesDialog = true
-                })
+                SettingsRow(
+                    Icons.Default.Settings,
+                    "Manage Google Drive",
+                    "Test, edit or remove configured Drive remotes",
+                    onClick = {
+                        remoteActionMessage = ""
+                        remotesDialog = true
+                        refreshRemotes()
+                    }
+                )
+                SettingsRow(
+                    Icons.Default.Security,
+                    "Supported cloud provider",
+                    "Google Drive only in this version"
+                )
+            }
+
+            SettingsGroup("Rclone") {
+                SettingsRow(
+                    Icons.Default.FileOpen,
+                    "Import rclone.conf",
+                    "Import an existing rclone configuration",
+                    onClick = onImportConfig
+                )
+                SettingsRow(
+                    Icons.Default.Code,
+                    "Import from Termux",
+                    "Copy the active Termux rclone.conf into Downloads",
+                    onClick = { termuxConfigDialog = true }
+                )
+                SettingsRow(
+                    Icons.Default.FileDownload,
+                    "Export rclone.conf",
+                    "Export the app-private rclone configuration",
+                    onClick = onExportConfig
+                )
                 SettingsRow(Icons.Default.Code, "Rclone Version", rcloneVersion)
             }
 
             SettingsGroup("App") {
-                SettingsRow(Icons.Default.Security, "Theme", "Pure AMOLED black")
                 SettingsRow(
                     Icons.Default.Notifications,
                     "Completion Notification",
@@ -1570,32 +1599,64 @@ private fun SettingsScreen(
                 SettingsRow(
                     Icons.Default.Schedule,
                     "Exact scheduling",
-                    if (alarmOk) "Ready" else "For running daily tasks at the exact time",
+                    if (alarmOk) "Ready" else "Required for exact daily schedules",
                     valueColor = if (alarmOk) Green else Amber,
                     onClick = onRequestExactAlarm
                 )
             }
 
             SettingsGroup("Data") {
-                SettingsRow(Icons.Default.Save, "Back Up Entire App", "Cards, rclone.conf, app settings and custom icons. Contains credentials; keep the file private.", onClick = onExportFullBackup)
-                SettingsRow(Icons.Default.FileOpen, "Restore Entire App", "Restore a full Rclone Cards backup", onClick = onImportFullBackup)
-                SettingsRow(Icons.Default.FileDownload, "Back Up Cards", "Export all task cards as JSON", onClick = onExportCards)
-                SettingsRow(Icons.Default.FileOpen, "Restore Cards", "Import a previous JSON card backup", onClick = onImportCards)
-                SettingsRow(Icons.Default.Refresh, "Restore Default Cards", "Replace the current list with example cards", valueColor = Amber, onClick = {
-                    resetCardsDialog = true
-                })
+                SettingsRow(
+                    Icons.Default.Save,
+                    "Back Up Entire App",
+                    "Cards, rclone.conf, settings and custom icons. Contains credentials.",
+                    onClick = onExportFullBackup
+                )
+                SettingsRow(
+                    Icons.Default.FileOpen,
+                    "Restore Entire App",
+                    "Restore a Basic Rclone Flow full backup",
+                    onClick = onImportFullBackup
+                )
+                SettingsRow(
+                    Icons.Default.FileDownload,
+                    "Back Up Cards",
+                    "Export task cards as JSON",
+                    onClick = onExportCards
+                )
+                SettingsRow(
+                    Icons.Default.FileOpen,
+                    "Restore Cards",
+                    "Import a previous card backup",
+                    onClick = onImportCards
+                )
+                SettingsRow(
+                    Icons.Default.Delete,
+                    "Clear All Cards",
+                    "Remove every task card without touching Drive or local files",
+                    valueColor = Amber,
+                    onClick = { clearCardsDialog = true }
+                )
             }
 
             SettingsGroup("Other") {
-                SettingsRow(Icons.Default.Storage, "Card data", "Stored only on this device")
-                SettingsRow(Icons.Default.Delete, "Clear App Data", "Reset cards, config and app settings", valueColor = Red, onClick = {
-                    clearDataDialog = true
-                })
-                SettingsRow(Icons.Default.Code, "About", "BlackWare + OpenAI ChatGPT", onClick = { aboutDialog = true })
+                SettingsRow(
+                    Icons.Default.Delete,
+                    "Clear App Data",
+                    "Reset cards, rclone.conf and app settings",
+                    valueColor = Red,
+                    onClick = { clearDataDialog = true }
+                )
+                SettingsRow(
+                    Icons.Default.Code,
+                    "About",
+                    "Basic Rclone Flow · BlackWare + OpenAI ChatGPT",
+                    onClick = { aboutDialog = true }
+                )
             }
 
             Text(
-                "Note: Android 11+ may block normal apps from /Android/data and /Android/obb even when All files access is granted.",
+                "Cloud support is intentionally limited to Google Drive for now. Local Android storage remains available as a task source or destination.",
                 color = TextDim,
                 fontSize = 10.sp,
                 lineHeight = 14.sp
@@ -1614,7 +1675,7 @@ private fun SettingsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "If rclone is already configured in Termux, run this command there. It finds the active rclone.conf and copies it to the phone Downloads folder.",
+                        "Run this in Termux. It copies the active rclone.conf to Downloads, where Basic Rclone Flow can import it.",
                         color = TextSecondary,
                         fontSize = 12.sp,
                         lineHeight = 17.sp
@@ -1635,10 +1696,9 @@ private fun SettingsScreen(
                         )
                     }
                     Text(
-                        "Then return here and use rclone.conf > Import to select Download/rclone.conf.",
+                        "Then use Import rclone.conf in Settings.",
                         color = TextDim,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp
+                        fontSize = 11.sp
                     )
                 }
             },
@@ -1646,9 +1706,7 @@ private fun SettingsScreen(
                 TextButton(onClick = {
                     clipboard.setText(AnnotatedString(termuxCommand))
                     toast(context, "Command copied.")
-                }) {
-                    Text("Copy command", color = Green)
-                }
+                }) { Text("Copy command", color = Green) }
             },
             dismissButton = {
                 TextButton(onClick = { termuxConfigDialog = false }) {
@@ -1660,25 +1718,25 @@ private fun SettingsScreen(
 
     if (driveSetupDialog) {
         val activity = context as? Activity
-        val coroutineScope = rememberCoroutineScope()
         val question: RcloneConfigQuestion? = driveStep?.question
+        val setupCompleted = driveStep?.done == true
 
         fun applyStep(step: RcloneConfigStep) {
-            if (step.done) {
+            driveStep = step
+            if (step.done && step.verified) {
                 val host = activity
                 if (host != null) {
-                    coroutineScope.launch {
-                        RcloneConfigWizard.finish(host)
-                    }
+                    settingsScope.launch { RcloneConfigWizard.finish(host) }
                 }
-
                 driveSetupDialog = false
                 driveStep = null
                 driveAnswer = ""
                 driveWizardError = null
-                toast(context, "${driveRemoteName.ifBlank { "gdrive" }} connected")
+                toast(context, "${driveRemoteName.ifBlank { "gdrive" }} connected and verified")
+            } else if (step.done) {
+                driveAnswer = ""
+                driveWizardError = step.verificationMessage
             } else {
-                driveStep = step
                 driveAnswer = step.question?.defaultValue.orEmpty()
                 driveWizardError = step.question?.error?.takeIf { it.isNotBlank() }
             }
@@ -1690,11 +1748,9 @@ private fun SettingsScreen(
                 driveWizardError = "Unable to access the Android activity."
                 return
             }
-
             driveBusy = true
             driveWizardError = null
-
-            coroutineScope.launch {
+            settingsScope.launch {
                 RcloneConfigWizard.startDrive(
                     activity = host,
                     remoteName = driveRemoteName
@@ -1702,7 +1758,6 @@ private fun SettingsScreen(
                     .onFailure { error ->
                         driveWizardError = error.message ?: error.toString()
                     }
-
                 driveBusy = false
             }
         }
@@ -1712,10 +1767,7 @@ private fun SettingsScreen(
             val q = question
             if (host == null || q == null) return
 
-            val answer = driveAnswer
-                .takeIf { it.isNotBlank() }
-                ?: q.defaultValue
-
+            val answer = driveAnswer.takeIf { it.isNotBlank() } ?: q.defaultValue
             if (q.required && answer.isBlank()) {
                 driveWizardError = "This value is required."
                 return
@@ -1723,8 +1775,7 @@ private fun SettingsScreen(
 
             driveBusy = true
             driveWizardError = null
-
-            coroutineScope.launch {
+            settingsScope.launch {
                 RcloneConfigWizard.answerDrive(
                     activity = host,
                     remoteName = driveRemoteName,
@@ -1734,19 +1785,37 @@ private fun SettingsScreen(
                     .onFailure { error ->
                         driveWizardError = error.message ?: error.toString()
                     }
-
                 driveBusy = false
             }
         }
 
-        fun cancelSetup() {
+        fun retryVerification() {
+            val host = activity ?: return
+            driveBusy = true
+            driveWizardError = null
+            settingsScope.launch {
+                RcloneConfigWizard.verifyDrive(
+                    activity = host,
+                    remoteName = driveRemoteName
+                ).onSuccess(::applyStep)
+                    .onFailure { error ->
+                        driveWizardError = error.message ?: error.toString()
+                    }
+                driveBusy = false
+            }
+        }
+
+        fun closeSetup() {
             val host = activity
             if (host != null) {
-                coroutineScope.launch {
-                    RcloneConfigWizard.cancel(host)
+                settingsScope.launch {
+                    if (setupCompleted) {
+                        RcloneConfigWizard.finish(host)
+                    } else {
+                        RcloneConfigWizard.cancel(host)
+                    }
                 }
             }
-
             driveSetupDialog = false
             driveStep = null
             driveAnswer = ""
@@ -1754,16 +1823,14 @@ private fun SettingsScreen(
         }
 
         AlertDialog(
-            onDismissRequest = {
-                if (!driveBusy) cancelSetup()
-            },
+            onDismissRequest = { if (!driveBusy) closeSetup() },
             containerColor = Amoled,
             title = {
                 Text(
-                    if (question == null) {
-                        "Google Drive Setup"
-                    } else {
-                        question.name
+                    when {
+                        setupCompleted -> "Google Drive Verification"
+                        question == null -> "Google Drive Setup"
+                        else -> question.name
                     }
                 )
             },
@@ -1790,21 +1857,28 @@ private fun SettingsScreen(
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    "Waiting for rclone…",
+                                    if (setupCompleted) "Testing Google Drive…" else "Waiting for rclone…",
                                     color = TextPrimary,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    "When OAuth starts, Google opens in your browser automatically. Approve access, then return here.",
+                                    "OAuth runs through rclone itself. After Google approval, the browser can return directly to Basic Rclone Flow.",
                                     color = TextDim,
                                     fontSize = 10.5.sp,
                                     lineHeight = 14.sp
                                 )
                             }
                         }
+                    } else if (setupCompleted) {
+                        Text(
+                            "rclone.conf was created, but Basic Rclone Flow does not mark the setup as verified until a real Drive root listing succeeds.",
+                            color = TextSecondary,
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp
+                        )
                     } else if (question == null) {
                         Text(
-                            "The design stays inside Rclone Cards, but the setup logic now comes directly from rclone's RC configuration protocol.",
+                            "The setup screen uses rclone's own persistent RC configuration protocol. rclone supplies every question, default and choice; the app does not fabricate Drive settings.",
                             color = TextSecondary,
                             fontSize = 11.5.sp,
                             lineHeight = 16.sp
@@ -1827,7 +1901,7 @@ private fun SettingsScreen(
                         )
 
                         Text(
-                            "Rclone itself will ask Client ID, Client Secret, Full Access / scope, Service Account, browser authorization, Shared Drive and every other Drive option in the correct order.",
+                            "Current cloud backend: Google Drive only. The normal rclone flow covers Client ID, Client Secret, scope / Full Access, Service Account, OAuth and Shared Drive.",
                             color = TextDim,
                             fontSize = 10.5.sp,
                             lineHeight = 14.sp
@@ -1844,11 +1918,8 @@ private fun SettingsScreen(
 
                         question.examples.forEach { example ->
                             val selected = driveAnswer == example.value
-
                             OutlinedButton(
-                                onClick = {
-                                    driveAnswer = example.value
-                                },
+                                onClick = { driveAnswer = example.value },
                                 modifier = Modifier.fillMaxWidth(),
                                 border = androidx.compose.foundation.BorderStroke(
                                     1.dp,
@@ -1865,17 +1936,9 @@ private fun SettingsScreen(
                                 ) {
                                     Text(
                                         example.help.ifBlank { example.value },
-                                        fontWeight = if (selected) {
-                                            FontWeight.Bold
-                                        } else {
-                                            FontWeight.Medium
-                                        }
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                                     )
-
-                                    if (
-                                        example.help.isNotBlank() &&
-                                        example.value.isNotBlank()
-                                    ) {
+                                    if (example.help.isNotBlank() && example.value.isNotBlank()) {
                                         Spacer(Modifier.height(2.dp))
                                         Text(
                                             example.value,
@@ -1885,6 +1948,17 @@ private fun SettingsScreen(
                                         )
                                     }
                                 }
+                            }
+                        }
+
+                        if (question.name.equals("service_account_file", ignoreCase = true)) {
+                            OutlinedButton(
+                                onClick = { serviceAccountPicker.launch("application/json") },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Text("Choose Service Account JSON")
                             }
                         }
 
@@ -1936,11 +2010,19 @@ private fun SettingsScreen(
                 TextButton(
                     enabled = !driveBusy,
                     onClick = {
-                        if (question == null) startSetup() else continueSetup()
+                        when {
+                            setupCompleted -> retryVerification()
+                            question == null -> startSetup()
+                            else -> continueSetup()
+                        }
                     }
                 ) {
                     Text(
-                        if (question == null) "Start Setup" else "Continue",
+                        when {
+                            setupCompleted -> "Test Again"
+                            question == null -> "Start Setup"
+                            else -> "Continue"
+                        },
                         color = if (driveBusy) TextDim else Green
                     )
                 }
@@ -1948,8 +2030,202 @@ private fun SettingsScreen(
             dismissButton = {
                 TextButton(
                     enabled = !driveBusy,
-                    onClick = { cancelSetup() }
+                    onClick = { closeSetup() }
+                ) { Text("Close") }
+            }
+        )
+    }
+
+    if (remotesDialog) {
+        AlertDialog(
+            onDismissRequest = { if (remoteBusyName == null) remotesDialog = false },
+            containerColor = Amoled,
+            title = { Text("Manage Google Drive") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
+                    if (remotes.isEmpty()) {
+                        Text(
+                            "No Google Drive remotes are configured.",
+                            color = TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    remotes.forEach { remote ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(15.dp))
+                                .border(1.dp, Outline, RoundedCornerShape(15.dp))
+                                .padding(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Cloud,
+                                    null,
+                                    tint = Cyan,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(9.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "$remote:",
+                                        color = TextPrimary,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "Google Drive",
+                                        color = TextDim,
+                                        fontSize = 10.5.sp
+                                    )
+                                }
+                                if (remoteBusyName == remote) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Green
+                                    )
+                                }
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(
+                                    enabled = remoteBusyName == null,
+                                    onClick = {
+                                        remoteBusyName = remote
+                                        remoteActionMessage = "Testing $remote…"
+                                        settingsScope.launch {
+                                            val result = withContext(Dispatchers.IO) {
+                                                RcloneEngine.testRemote(context, remote)
+                                            }
+                                            remoteActionMessage = result.fold(
+                                                onSuccess = { "$remote: connection verified." },
+                                                onFailure = { "$remote: ${it.message ?: "connection test failed"}" }
+                                            )
+                                            remoteBusyName = null
+                                        }
+                                    }
+                                ) { Text("Test", color = Green) }
+
+                                TextButton(
+                                    enabled = remoteBusyName == null,
+                                    onClick = {
+                                        remoteEditName = remote
+                                        remoteEditText = ConfigManager.readRemoteBlock(remote).orEmpty()
+                                    }
+                                ) { Text("Edit", color = Cyan) }
+
+                                TextButton(
+                                    enabled = remoteBusyName == null,
+                                    onClick = { deleteRemoteName = remote }
+                                ) { Text("Delete", color = Red) }
+                            }
+                        }
+                    }
+
+                    if (remoteActionMessage.isNotBlank()) {
+                        Text(
+                            remoteActionMessage,
+                            color = if (remoteActionMessage.contains("verified")) Green else TextSecondary,
+                            fontSize = 10.5.sp,
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    remoteActionMessage = ""
+                    refreshRemotes()
+                }) { Text("Refresh", color = Green) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = remoteBusyName == null,
+                    onClick = { remotesDialog = false }
+                ) { Text("Close") }
+            }
+        )
+    }
+
+    remoteEditName?.let { remote ->
+        AlertDialog(
+            onDismissRequest = { remoteEditName = null },
+            containerColor = Amoled,
+            title = { Text("Edit $remote") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Advanced editor for this Google Drive remote only. OAuth tokens are sensitive.",
+                        color = TextDim,
+                        fontSize = 10.5.sp
+                    )
+                    OutlinedTextField(
+                        value = remoteEditText,
+                        onValueChange = { remoteEditText = it },
+                        modifier = Modifier.fillMaxWidth().height(340.dp),
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        colors = darkTextFieldColors()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    ConfigManager.replaceRemoteBlock(remote, remoteEditText)
+                        .onSuccess {
+                            remoteEditName = null
+                            remoteActionMessage = "$remote: configuration saved. Run Test to verify it."
+                            refreshRemotes()
+                        }
+                        .onFailure {
+                            toast(context, it.message ?: "Remote configuration could not be saved.")
+                        }
+                }) { Text("Save", color = Green) }
+            },
+            dismissButton = {
+                TextButton(onClick = { remoteEditName = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    deleteRemoteName?.let { remote ->
+        AlertDialog(
+            onDismissRequest = { deleteRemoteName = null },
+            containerColor = Amoled,
+            title = { Text("Delete $remote?") },
+            text = {
+                Text(
+                    "The remote will be removed from rclone.conf. Task cards are not deleted.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    ConfigManager.deleteRemote(remote)
+                        .onSuccess {
+                            deleteRemoteName = null
+                            remoteActionMessage = "$remote: remote deleted."
+                            refreshRemotes()
+                        }
+                        .onFailure {
+                            toast(context, it.message ?: "Remote could not be deleted.")
+                        }
+                }) { Text("Delete", color = Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteRemoteName = null }) {
                     Text("Cancel")
                 }
             }
@@ -1960,18 +2236,22 @@ private fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { aboutDialog = false },
             containerColor = Amoled,
-            title = { Text("Rclone Cards") },
+            title = { Text("Basic Rclone Flow") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Created by BlackWare with OpenAI ChatGPT.", color = TextPrimary, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "A lightweight AMOLED-first Android front end for rclone. Task cards run predefined rclone commands, show live transfer progress, continue through a foreground service, support scheduling, configuration import/export, and card-specific home-screen shortcuts.",
+                        "Created by BlackWare with OpenAI ChatGPT.",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "A lightweight AMOLED-first Android task runner for rclone. Build reusable cards for copy, sync, move and other rclone workflows, then run them with live progress and background execution.",
                         color = TextSecondary,
                         fontSize = 12.sp,
                         lineHeight = 17.sp
                     )
                     Text(
-                        "The app is designed for fast personal sync, copy and move workflows without turning rclone into a full file manager.",
+                        "Cloud provider support is intentionally limited to Google Drive in this version. Local Android storage remains supported.",
                         color = TextDim,
                         fontSize = 11.sp,
                         lineHeight = 16.sp
@@ -1980,7 +2260,9 @@ private fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { aboutDialog = false }) { Text("Close", color = Green) }
+                TextButton(onClick = { aboutDialog = false }) {
+                    Text("Close", color = Green)
+                }
             }
         )
     }
@@ -1992,7 +2274,11 @@ private fun SettingsScreen(
             title = { Text("Default rclone options") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("These values apply when a card leaves its advanced options blank. Values written directly in the command always take priority.", color = TextSecondary, fontSize = 11.sp)
+                    Text(
+                        "These values apply when a card leaves its advanced options blank. Values written directly in the command take priority.",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
                     OutlinedTextField(
                         value = defaultsTransfersText,
                         onValueChange = { defaultsTransfersText = it.filter(Char::isDigit).take(2) },
@@ -2019,7 +2305,38 @@ private fun SettingsScreen(
                     toast(context, "Default rclone options saved")
                 }) { Text("Save", color = Green) }
             },
-            dismissButton = { TextButton(onClick = { defaultsDialog = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = { defaultsDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (clearCardsDialog) {
+        AlertDialog(
+            onDismissRequest = { clearCardsDialog = false },
+            containerColor = Amoled,
+            title = { Text("Clear all cards?") },
+            text = {
+                Text(
+                    "Every task card and its schedule will be removed. Drive and local files are not touched.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    CardStore.cards.value.forEach { TaskScheduler.cancel(context, it.id) }
+                    CardStore.clearAll()
+                    clearCardsDialog = false
+                    toast(context, "All cards cleared")
+                }) { Text("Clear", color = Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearCardsDialog = false }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 
@@ -2028,92 +2345,27 @@ private fun SettingsScreen(
             onDismissRequest = { clearDataDialog = false },
             containerColor = Amoled,
             title = { Text("Clear app data?") },
-            text = { Text("Cards return to defaults, rclone.conf is cleared and app settings are reset. Files on Drive or on the phone are not deleted.", color = TextSecondary) },
+            text = {
+                Text(
+                    "Cards, rclone.conf and Basic Rclone Flow settings will be reset. Files on Drive or local storage are not deleted.",
+                    color = TextSecondary
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     CardStore.cards.value.forEach { TaskScheduler.cancel(context, it.id) }
                     ConfigManager.writeText("")
                     AppSettings.reset()
-                    CardStore.resetDefaults()
+                    CardStore.clearAll()
                     clearDataDialog = false
                     toast(context, "App data reset")
                 }) { Text("Reset", color = Red) }
             },
-            dismissButton = { TextButton(onClick = { clearDataDialog = false }) { Text("Cancel") } }
-        )
-    }
-
-    if (configDialog) {
-        AlertDialog(
-            onDismissRequest = { configDialog = false },
-            containerColor = Amoled,
-            title = { Text("rclone.conf") },
-            text = {
-                OutlinedTextField(
-                    value = configText,
-                    onValueChange = { configText = it },
-                    modifier = Modifier.fillMaxWidth().height(380.dp),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    colors = darkTextFieldColors()
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    ConfigManager.writeText(configText)
-                    configDialog = false
-                    toast(context, "rclone.conf saved")
-                }) { Text("Save", color = Green) }
-            },
-            dismissButton = { TextButton(onClick = { configDialog = false }) { Text("Cancel") } }
-        )
-    }
-
-    if (remotesDialog) {
-        LaunchedEffect(remotesDialog) {
-            remotes = withContext(Dispatchers.IO) { RcloneEngine.listRemotes(context) }
-        }
-        AlertDialog(
-            onDismissRequest = { remotesDialog = false },
-            containerColor = Amoled,
-            title = { Text("Remotes") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (remotes.isEmpty()) Text("No remotes found, or a config has not been imported yet.", color = TextSecondary, fontSize = 12.sp)
-                    remotes.forEach { remote ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Amoled).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Cloud, null, tint = Cyan, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text(remote, color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                        }
-                    }
+            dismissButton = {
+                TextButton(onClick = { clearDataDialog = false }) {
+                    Text("Cancel")
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    remotesDialog = false
-                    configText = ConfigManager.readText()
-                    configDialog = true
-                }) { Text("Edit Config", color = Green) }
-            },
-            dismissButton = { TextButton(onClick = { remotesDialog = false }) { Text("Close") } }
-        )
-    }
-
-    if (resetCardsDialog) {
-        AlertDialog(
-            onDismissRequest = { resetCardsDialog = false },
-            containerColor = Amoled,
-            title = { Text("Restore default cards?") },
-            text = { Text("The current task cards will be replaced. Export a card backup first if needed.", color = TextSecondary) },
-            confirmButton = {
-                TextButton(onClick = {
-                    CardStore.cards.value.forEach { TaskScheduler.cancel(context, it.id) }
-                    CardStore.resetDefaults()
-                    resetCardsDialog = false
-                    toast(context, "Default cards restored")
-                }) { Text("Restore", color = Amber) }
-            },
-            dismissButton = { TextButton(onClick = { resetCardsDialog = false }) { Text("Cancel") } }
+            }
         )
     }
 }

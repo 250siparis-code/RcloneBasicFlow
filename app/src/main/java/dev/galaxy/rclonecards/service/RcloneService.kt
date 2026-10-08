@@ -97,7 +97,7 @@ class RcloneService : Service() {
 
         if (missingRemotes.isNotEmpty()) {
             val missing = missingRemotes.joinToString(", ")
-            val message = "Remote '$missing' is not configured. Open Settings > Google Drive Sign-In or import rclone.conf."
+            val message = "Remote '$missing' is not configured. Open Settings > Google Drive Setup or import rclone.conf."
             JobRepository.put(
                 JobState(
                     cardId = card.id,
@@ -388,7 +388,7 @@ class RcloneService : Service() {
         synchronized(queueLock) {
             if (!queue.contains(cardId) && !processes.containsKey(cardId)) queue.addLast(cardId)
         }
-        JobRepository.put(JobState(card.id, card.title, JobStatus.QUEUED, logs = listOf("Sıraya eklendi")))
+        JobRepository.put(JobState(card.id, card.title, JobStatus.QUEUED, logs = listOf("Added to queue")))
         updateForeground()
         pumpQueue()
     }
@@ -417,12 +417,12 @@ class RcloneService : Service() {
         val active = JobRepository.jobs.value.values.firstOrNull {
             it.status == JobStatus.RUNNING || it.status == JobStatus.PAUSED || it.status == JobStatus.QUEUED
         }
-        val title = active?.title ?: "Rclone Cards"
+        val title = active?.title ?: "Basic Rclone Flow"
         val statusText = when (active?.status) {
-            JobStatus.RUNNING -> "Çalışıyor · %${active.progressPercent} · ${formatSpeed(active.speedBytesPerSecond)}"
-            JobStatus.PAUSED -> "Duraklatıldı · %${active.progressPercent}"
-            JobStatus.QUEUED -> "Sırada"
-            else -> "Aktif aktarım yok"
+            JobStatus.RUNNING -> "Running · %${active.progressPercent} · ${formatSpeed(active.speedBytesPerSecond)}"
+            JobStatus.PAUSED -> "Paused · %${active.progressPercent}"
+            JobStatus.QUEUED -> "Queued"
+            else -> "No active transfer"
         }
 
         val openIntent = Intent(this, MainActivity::class.java).apply {
@@ -457,7 +457,7 @@ class RcloneService : Service() {
                 stopIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Durdur", stopPending)
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending)
         }
         return builder.build()
     }
@@ -479,9 +479,9 @@ class RcloneService : Service() {
         )
         val ok = state.status == JobStatus.COMPLETED
         val body = if (ok) {
-            "Tamamlandı · ${formatBytes(state.bytes)} · ${state.transfers} dosya"
+            "Completed · ${formatBytes(state.bytes)} · ${state.transfers} files"
         } else {
-            state.lastError ?: "rclone işlemi hata ile sonlandı"
+            state.lastError ?: "rclone finished with an error"
         }
         val notification = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
             .setSmallIcon(if (ok) android.R.drawable.stat_sys_upload_done else android.R.drawable.stat_notify_error)
@@ -531,18 +531,18 @@ class RcloneService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Rclone aktarımları",
+                "Basic Rclone Flow transfers",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Arka planda çalışan rclone görevleri"
+                description = "Background rclone tasks"
                 setShowBadge(false)
             }
             val resultChannel = NotificationChannel(
                 RESULT_CHANNEL_ID,
-                "Rclone sonuçları",
+                "Basic Rclone Flow results",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Tamamlanan veya hata veren rclone görevleri"
+                description = "Completed or failed rclone tasks"
             }
             getSystemService(NotificationManager::class.java).apply {
                 createNotificationChannel(channel)

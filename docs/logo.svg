@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108" role="img" aria-label="Basic Rclone Flow">
+  <rect width="108" height="108" rx="24" fill="#000"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="6.5">
+    <path d="M34 21C49 13 67 16 77 28c3 4 5 8 6 13" stroke="#67E8F9"/>
+    <path d="M84 55c-1 16-12 29-27 33-5 1-10 1-14 0" stroke="#06B6D4"/>
+    <path d="M31 83C20 73 17 57 22 43c2-5 5-9 9-12" stroke="#3F79AD"/>
+  </g>
+  <path d="M76 36l9 9 3-13z" fill="#67E8F9"/>
+  <path d="M48 81l-10 7 13 6z" fill="#06B6D4"/>
+  <path d="M25 34l10-7-2 13z" fill="#3F79AD"/>
+  <path d="M39 75V34q0-4 4-4h12q13 0 13 12T55 54H39m15 0 15 21"
+        fill="none" stroke="#F4F4F5" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

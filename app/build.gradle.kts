@@ -11,8 +11,8 @@ android {
         applicationId = "dev.galaxy.rclonecards"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0-beta"
+        versionCode = 2
+        versionName = "1.1.0-beta"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

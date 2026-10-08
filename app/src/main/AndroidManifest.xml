@@ -16,19 +16,28 @@
         android:name=".RcloneCardsApp"
         android:allowBackup="false"
         android:extractNativeLibs="true"
-        android:icon="@drawable/rclone_launcher_art"
-        android:roundIcon="@drawable/rclone_launcher_art"
-        android:label="Rclone Cards"
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher"
+        android:label="Basic Rclone Flow"
         android:supportsRtl="true"
         android:theme="@style/Theme.RcloneCards">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="basic-rclone-flow"
+                    android:host="oauth" />
             </intent-filter>
         </activity>
 

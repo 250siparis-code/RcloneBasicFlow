@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Basic Rclone Flow
 
 on:
   workflow_dispatch:
@@ -57,9 +57,12 @@ jobs:
       - name: Build minified APK
         run: gradle --no-daemon :app:assembleRelease
 
+      - name: Verify APK output
+        run: test -s app/build/outputs/apk/release/app-release.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: RcloneCards-arm64-minified
+          name: Basic-Rclone-Flow-v1.1.0-beta-arm64
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
