@@ -2,6 +2,7 @@
 
 package dev.galaxy.rclonecards.ui
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -131,6 +132,9 @@ import dev.galaxy.rclonecards.BuildConfig
 import dev.galaxy.rclonecards.data.AppSettings
 import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
+import dev.galaxy.rclonecards.engine.RcloneConfigQuestion
+import dev.galaxy.rclonecards.engine.RcloneConfigStep
+import dev.galaxy.rclonecards.engine.RcloneConfigWizard
 import dev.galaxy.rclonecards.engine.RcloneEngine
 import dev.galaxy.rclonecards.model.CardColor
 import dev.galaxy.rclonecards.model.CardIcon
