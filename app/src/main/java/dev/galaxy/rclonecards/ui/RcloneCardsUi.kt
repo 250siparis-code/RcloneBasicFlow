@@ -99,6 +99,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -142,6 +143,7 @@ import dev.galaxy.rclonecards.service.TaskScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Locale
 
@@ -1457,6 +1459,10 @@ private fun SettingsScreen(
     var defaultsDialog by remember { mutableStateOf(false) }
     var clearDataDialog by remember { mutableStateOf(false) }
     var driveSetupDialog by remember { mutableStateOf(false) }
+    var driveStep by remember { mutableStateOf<RcloneConfigStep?>(null) }
+    var driveAnswer by remember { mutableStateOf("") }
+    var driveBusy by remember { mutableStateOf(false) }
+    var driveWizardError by remember { mutableStateOf<String?>(null) }
     var termuxConfigDialog by remember { mutableStateOf(false) }
     var driveRemoteName by remember { mutableStateOf("gdrive") }
     var driveClientId by remember { mutableStateOf("") }
@@ -1500,8 +1506,13 @@ private fun SettingsScreen(
                 SettingsRow(
                     Icons.Default.Cloud,
                     "Google Drive Setup",
-                    "Configure Drive options first, then authenticate",
-                    onClick = { driveSetupDialog = true }
+                    "Run the real rclone config flow inside this screen",
+                    onClick = {
+                        driveStep = null
+                        driveAnswer = ""
+                        driveWizardError = null
+                        driveSetupDialog = true
+                    }
                 )
                 SettingsRow(Icons.Default.FileOpen, "rclone.conf", "Import", onClick = onImportConfig)
                 SettingsRow(Icons.Default.Code, "Import from Termux", "Show a copyable command to locate and export rclone.conf", onClick = { termuxConfigDialog = true })
@@ -1644,160 +1655,297 @@ private fun SettingsScreen(
     }
 
     if (driveSetupDialog) {
+        val activity = context as? Activity
+        val coroutineScope = rememberCoroutineScope()
+        val question: RcloneConfigQuestion? = driveStep?.question
+
+        fun applyStep(step: RcloneConfigStep) {
+            if (step.done) {
+                val host = activity
+                if (host != null) {
+                    coroutineScope.launch {
+                        RcloneConfigWizard.finish(host)
+                    }
+                }
+
+                driveSetupDialog = false
+                driveStep = null
+                driveAnswer = ""
+                driveWizardError = null
+                toast(context, "${driveRemoteName.ifBlank { "gdrive" }} connected")
+            } else {
+                driveStep = step
+                driveAnswer = step.question?.defaultValue.orEmpty()
+                driveWizardError = step.question?.error?.takeIf { it.isNotBlank() }
+            }
+        }
+
+        fun startSetup() {
+            val host = activity
+            if (host == null) {
+                driveWizardError = "Unable to access the Android activity."
+                return
+            }
+
+            driveBusy = true
+            driveWizardError = null
+
+            coroutineScope.launch {
+                RcloneConfigWizard.startDrive(
+                    activity = host,
+                    remoteName = driveRemoteName
+                ).onSuccess(::applyStep)
+                    .onFailure { error ->
+                        driveWizardError = error.message ?: error.toString()
+                    }
+
+                driveBusy = false
+            }
+        }
+
+        fun continueSetup() {
+            val host = activity
+            val q = question
+            if (host == null || q == null) return
+
+            val answer = driveAnswer
+                .takeIf { it.isNotBlank() }
+                ?: q.defaultValue
+
+            if (q.required && answer.isBlank()) {
+                driveWizardError = "This value is required."
+                return
+            }
+
+            driveBusy = true
+            driveWizardError = null
+
+            coroutineScope.launch {
+                RcloneConfigWizard.answerDrive(
+                    activity = host,
+                    remoteName = driveRemoteName,
+                    state = q.state,
+                    result = answer
+                ).onSuccess(::applyStep)
+                    .onFailure { error ->
+                        driveWizardError = error.message ?: error.toString()
+                    }
+
+                driveBusy = false
+            }
+        }
+
+        fun cancelSetup() {
+            val host = activity
+            if (host != null) {
+                coroutineScope.launch {
+                    RcloneConfigWizard.cancel(host)
+                }
+            }
+
+            driveSetupDialog = false
+            driveStep = null
+            driveAnswer = ""
+            driveWizardError = null
+        }
+
         AlertDialog(
-            onDismissRequest = { driveSetupDialog = false },
+            onDismissRequest = {
+                if (!driveBusy) cancelSetup()
+            },
             containerColor = Amoled,
-            title = { Text("Google Drive Setup") },
+            title = {
+                Text(
+                    if (question == null) {
+                        "Google Drive Setup"
+                    } else {
+                        question.name
+                    }
+                )
+            },
             text = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 520.dp)
+                        .heightIn(max = 540.dp)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        "Configure the same core Drive options used by rclone config. Browser authorization starts only after these values are ready.",
-                        color = TextSecondary,
-                        fontSize = 11.5.sp,
-                        lineHeight = 16.sp
-                    )
-
-                    OutlinedTextField(
-                        value = driveRemoteName,
-                        onValueChange = { driveRemoteName = it.take(40) },
-                        label = { Text("Remote name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = darkTextFieldColors()
-                    )
-
-                    OutlinedTextField(
-                        value = driveClientId,
-                        onValueChange = { driveClientId = it },
-                        label = { Text("Client ID (optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = darkTextFieldColors()
-                    )
-
-                    OutlinedTextField(
-                        value = driveClientSecret,
-                        onValueChange = { driveClientSecret = it },
-                        label = { Text("Client secret (optional)") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = darkTextFieldColors()
-                    )
-
-                    OutlinedTextField(
-                        value = driveScope,
-                        onValueChange = { driveScope = it.trim() },
-                        label = { Text("Drive scope") },
-                        placeholder = { Text("drive") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = darkTextFieldColors()
-                    )
-
-                    Text(
-                        "Common scopes: drive, drive.readonly, drive.file, drive.appfolder, drive.metadata.readonly",
-                        color = TextDim,
-                        fontSize = 10.5.sp,
-                        lineHeight = 14.sp
-                    )
-
-                    OutlinedTextField(
-                        value = driveRootFolderId,
-                        onValueChange = { driveRootFolderId = it.trim() },
-                        label = { Text("Root folder ID (optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = darkTextFieldColors()
-                    )
-
-                    OutlinedTextField(
-                        value = driveTeamDrive,
-                        onValueChange = { driveTeamDrive = it.trim() },
-                        label = { Text("Shared Drive / Team Drive ID (optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = darkTextFieldColors()
-                    )
-
-                    OutlinedButton(
-                        onClick = { serviceAccountPicker.launch("application/json") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text(
-                            if (driveServiceAccountFile.isBlank()) {
-                                "Import Service Account JSON (optional)"
-                            } else {
-                                "Service Account JSON selected"
+                    if (driveBusy) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                color = Green,
+                                strokeWidth = 2.5.dp
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    "Waiting for rclone…",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "When OAuth starts, Google opens in your browser automatically. Approve access, then return here.",
+                                    color = TextDim,
+                                    fontSize = 10.5.sp,
+                                    lineHeight = 14.sp
+                                )
                             }
-                        )
-                    }
-
-                    if (driveServiceAccountFile.isNotBlank()) {
-                        Text(
-                            driveServiceAccountFile,
-                            color = TextDim,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        TextButton(onClick = { driveServiceAccountFile = "" }) {
-                            Text("Remove Service Account", color = Red)
                         }
+                    } else if (question == null) {
+                        Text(
+                            "The design stays inside Rclone Cards, but the setup logic now comes directly from rclone's RC configuration protocol.",
+                            color = TextSecondary,
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp
+                        )
+
+                        OutlinedTextField(
+                            value = driveRemoteName,
+                            onValueChange = {
+                                driveRemoteName = it
+                                    .replace(":", "")
+                                    .replace("[", "")
+                                    .replace("]", "")
+                                    .take(40)
+                            },
+                            label = { Text("Remote name") },
+                            placeholder = { Text("gdrive") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = darkTextFieldColors()
+                        )
 
                         Text(
-                            "A Service Account is an alternative to interactive Google sign-in. When this file is selected, the browser OAuth step is skipped.",
-                            color = Amber,
+                            "Rclone itself will ask Client ID, Client Secret, Full Access / scope, Service Account, browser authorization, Shared Drive and every other Drive option in the correct order.",
+                            color = TextDim,
                             fontSize = 10.5.sp,
                             lineHeight = 14.sp
                         )
                     } else {
+                        if (question.help.isNotBlank()) {
+                            Text(
+                                question.help,
+                                color = TextSecondary,
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+
+                        question.examples.forEach { example ->
+                            val selected = driveAnswer == example.value
+
+                            OutlinedButton(
+                                onClick = {
+                                    driveAnswer = example.value
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (selected) Green else Outline
+                                ),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (selected) Green else TextPrimary
+                                ),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.Start
+                                ) {
+                                    Text(
+                                        example.help.ifBlank { example.value },
+                                        fontWeight = if (selected) {
+                                            FontWeight.Bold
+                                        } else {
+                                            FontWeight.Medium
+                                        }
+                                    )
+
+                                    if (
+                                        example.help.isNotBlank() &&
+                                        example.value.isNotBlank()
+                                    ) {
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            example.value,
+                                            color = TextDim,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!question.exclusive) {
+                            OutlinedTextField(
+                                value = driveAnswer,
+                                onValueChange = { driveAnswer = it },
+                                label = {
+                                    Text(
+                                        when {
+                                            question.defaultString.isNotBlank() ->
+                                                "Value · default ${question.defaultString}"
+                                            question.defaultValue.isNotBlank() ->
+                                                "Value · default ${question.defaultValue}"
+                                            else -> "Value"
+                                        }
+                                    )
+                                },
+                                singleLine = question.type != "stringArray",
+                                visualTransformation = if (question.isPassword) {
+                                    PasswordVisualTransformation()
+                                } else {
+                                    androidx.compose.ui.text.input.VisualTransformation.None
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = darkTextFieldColors()
+                            )
+                        } else if (driveAnswer.isNotBlank()) {
+                            Text(
+                                "Selected: $driveAnswer",
+                                color = Green,
+                                fontSize = 10.5.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    driveWizardError?.let { message ->
                         Text(
-                            "Without a Service Account, Continue opens the Google browser authorization flow after saving these settings.",
-                            color = TextDim,
-                            fontSize = 10.5.sp,
-                            lineHeight = 14.sp
+                            message,
+                            color = Red,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
                         )
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    onConnectGoogleDrive(
-                        driveRemoteName.ifBlank { "gdrive" },
-                        driveClientId,
-                        driveClientSecret,
-                        driveScope.ifBlank { "drive" },
-                        driveRootFolderId,
-                        driveServiceAccountFile,
-                        driveTeamDrive
-                    )
-                    driveSetupDialog = false
-
-                    if (driveServiceAccountFile.isBlank()) {
-                        toast(context, "Waiting for Google browser authorization…")
-                    } else {
-                        toast(context, "Saving Service Account Drive configuration…")
+                TextButton(
+                    enabled = !driveBusy,
+                    onClick = {
+                        if (question == null) startSetup() else continueSetup()
                     }
-                }) {
+                ) {
                     Text(
-                        if (driveServiceAccountFile.isBlank()) "Continue to Sign-In" else "Save Drive Setup",
-                        color = Green
+                        if (question == null) "Start Setup" else "Continue",
+                        color = if (driveBusy) TextDim else Green
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { driveSetupDialog = false }) {
+                TextButton(
+                    enabled = !driveBusy,
+                    onClick = { cancelSetup() }
+                ) {
                     Text("Cancel")
                 }
             }
