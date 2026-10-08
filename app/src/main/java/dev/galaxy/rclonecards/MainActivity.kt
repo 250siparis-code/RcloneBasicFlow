@@ -131,8 +131,17 @@ class MainActivity : ComponentActivity() {
                     externalNavigation = externalNavigation,
                     onImportConfig = { importConfigLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) },
                     onExportConfig = { exportConfigLauncher.launch("rclone.conf") },
-                    onConnectGoogleDrive = { remoteName, clientId, clientSecret ->
-                        DriveConnector.connect(this, remoteName, clientId, clientSecret) { result ->
+                    onConnectGoogleDrive = { remoteName, clientId, clientSecret, scope, rootFolderId, serviceAccountFile, teamDrive ->
+                        DriveConnector.connect(
+                            activity = this,
+                            remoteName = remoteName,
+                            clientId = clientId,
+                            clientSecret = clientSecret,
+                            scope = scope,
+                            rootFolderId = rootFolderId,
+                            serviceAccountFile = serviceAccountFile,
+                            teamDrive = teamDrive
+                        ) { result ->
                             result.onSuccess { name ->
                                 Toast.makeText(this, "$name connected", Toast.LENGTH_LONG).show()
                             }.onFailure { error ->

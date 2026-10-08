@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -197,7 +198,7 @@ fun RcloneCardsRoot(
     externalNavigation: StateFlow<String?>,
     onImportConfig: () -> Unit,
     onExportConfig: () -> Unit,
-    onConnectGoogleDrive: (String, String, String) -> Unit,
+    onConnectGoogleDrive: (String, String, String, String, String, String, String) -> Unit,
     onImportCards: () -> Unit,
     onExportCards: () -> Unit,
     onImportFullBackup: () -> Unit,
@@ -461,6 +462,7 @@ private fun TaskCardItem(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .height(138.dp)
             .clip(RoundedCornerShape(24.dp))
             .background(Amoled)
             .border(
@@ -475,7 +477,12 @@ private fun TaskCardItem(
             )
             .padding(14.dp)
     ) {
-        Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp),
+            verticalAlignment = Alignment.Top
+        ) {
             Box(
                 modifier = Modifier
                     .width(54.dp)
@@ -499,13 +506,17 @@ private fun TaskCardItem(
 
             Spacer(Modifier.width(12.dp))
 
-            Column(Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 2.dp)
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         card.title,
                         color = TextPrimary,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
+                        fontSize = 16.5.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -513,42 +524,21 @@ private fun TaskCardItem(
                     Text(
                         mainCommand(card.command),
                         color = TextDim,
-                        fontSize = 11.5.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1
                     )
                 }
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(7.dp))
+
                 Text(
                     card.subtitle,
                     color = TextSecondary,
-                    fontSize = 13.sp,
+                    fontSize = 12.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                if (queued || completed || error || job?.status == JobStatus.PAUSED) {
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        when {
-                            job?.status == JobStatus.PAUSED -> "Paused"
-                            queued -> "Queued"
-                            completed -> "Completed"
-                            error -> job?.lastError?.take(55) ?: "Error"
-                            else -> ""
-                        },
-                        color = when {
-                            completed -> Green
-                            error -> Red
-                            queued -> accent
-                            else -> Amber
-                        },
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
             }
 
             Spacer(Modifier.width(6.dp))
@@ -570,15 +560,16 @@ private fun TaskCardItem(
                         )
                     }
 
-                    completed -> Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.DoneAll, null, tint = Green, modifier = Modifier.size(28.dp))
-                    }
-
-                    error -> IconButton(
-                        onClick = onRun,
-                        modifier = Modifier.size(44.dp)
+                    completed -> Box(
+                        Modifier.size(44.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.PlayArrow, "Run again", tint = iconTint, modifier = Modifier.size(29.dp))
+                        Icon(
+                            Icons.Default.DoneAll,
+                            null,
+                            tint = Green,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
 
                     else -> IconButton(
@@ -588,63 +579,109 @@ private fun TaskCardItem(
                             .clip(RoundedCornerShape(15.dp))
                             .background(iconTint.copy(alpha = 0.12f))
                     ) {
-                        Icon(Icons.Default.PlayArrow, "Run", tint = iconTint, modifier = Modifier.size(29.dp))
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            if (error) "Run again" else "Run",
+                            tint = iconTint,
+                            modifier = Modifier.size(29.dp)
+                        )
                     }
                 }
 
                 IconButton(
                     onClick = onMenu,
-                    modifier = Modifier.size(32.dp).alpha(.55f)
+                    modifier = Modifier.size(28.dp).alpha(.55f)
                 ) {
-                    Icon(Icons.Default.MoreVert, "Task menu", tint = TextSecondary, modifier = Modifier.size(20.dp))
+                    Icon(
+                        Icons.Default.MoreVert,
+                        "Task menu",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(19.dp)
+                    )
                 }
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
-        if (active && job != null) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                LinearProgressIndicator(
-                    progress = job.progressPercent / 100f,
-                    modifier = Modifier.weight(1f).height(8.dp).clip(CircleShape),
-                    color = accent,
-                    trackColor = Color(0xFF202024)
-                )
-                Spacer(Modifier.width(11.dp))
-                Text(
-                    "${job.progressPercent}%",
-                    color = accent,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Black
-                )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            when {
+                active && job != null -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LinearProgressIndicator(
+                            progress = job.progressPercent / 100f,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(8.dp)
+                                .clip(CircleShape),
+                            color = accent,
+                            trackColor = Color(0xFF202024)
+                        )
+                        Spacer(Modifier.width(11.dp))
+                        Text(
+                            "${job.progressPercent}%",
+                            color = accent,
+                            fontSize = 17.5.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
+
+                error -> {
+                    Text(
+                        job?.lastError?.ifBlank { null } ?: "Error",
+                        color = Red,
+                        fontSize = 11.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                queued -> {
+                    Text(
+                        "Queued",
+                        color = accent,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                completed -> {
+                    Text(
+                        "Completed",
+                        color = Green,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                job?.status == JobStatus.STOPPED -> {
+                    Text(
+                        "Stopped",
+                        color = TextDim,
+                        fontSize = 11.5.sp
+                    )
+                }
+
+                else -> {
+                    Text(
+                        commandSummary(card.command),
+                        color = TextDim,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-            Spacer(Modifier.height(7.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    if (job.totalBytes > 0) {
-                        "${formatBytes(job.bytes)} / ${formatBytes(job.totalBytes)}"
-                    } else {
-                        formatBytes(job.bytes)
-                    },
-                    color = TextSecondary,
-                    fontSize = 11.5.sp
-                )
-                Text(
-                    "${formatSpeed(job.speedBytesPerSecond)} · ${formatEta(job.etaSeconds)}",
-                    color = TextSecondary,
-                    fontSize = 11.5.sp
-                )
-            }
-        } else {
-            Text(
-                commandSummary(card.command),
-                color = TextDim,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.5.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }
@@ -709,20 +746,12 @@ private fun CardMenuSheet(
                         .background(cardAccent.copy(alpha = .09f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(cardAccent.copy(alpha = .08f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CardIconGraphic(
-                            customIconPath = card.customIconPath,
-                            icon = card.icon,
-                            tint = cardAccent.copy(alpha = card.iconAlpha),
-                            modifier = Modifier.size(27.dp)
-                        )
-                    }
+                    CardIconGraphic(
+                        customIconPath = card.customIconPath,
+                        icon = card.icon,
+                        tint = cardAccent.copy(alpha = card.iconAlpha),
+                        modifier = Modifier.size(29.dp)
+                    )
                 }
 
                 Spacer(Modifier.width(11.dp))
@@ -730,30 +759,17 @@ private fun CardMenuSheet(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(top = 2.dp)
+                        .padding(top = 3.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            card.title,
-                            modifier = Modifier.weight(1f, fill = false),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.5.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.width(7.dp))
-                        Text(
-                            mainCommand(card.command),
-                            color = TextDim,
-                            fontSize = 10.5.sp,
-                            maxLines = 1
-                        )
-                    }
+                    Text(
+                        card.title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(5.dp))
 
                     Text(
                         card.subtitle,
@@ -764,38 +780,26 @@ private fun CardMenuSheet(
                     )
                 }
 
-                Spacer(Modifier.width(6.dp))
-
                 IconButton(
                     onClick = {
                         onDismiss()
                         onEdit()
                     },
-                    modifier = Modifier.size(42.dp)
+                    modifier = Modifier.size(44.dp)
                 ) {
-                    Box(
-                        Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(TextSecondary.copy(alpha = .07f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.Edit,
-                            "Edit",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    NeonMenuIcon(
+                        icon = Icons.Default.Edit,
+                        tint = Color(0xFFB8BBC4),
+                        contentDescription = "Edit"
+                    )
                 }
             }
 
-            Spacer(Modifier.height(11.dp))
-            HorizontalDivider(color = Outline)
+            Spacer(Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
@@ -804,9 +808,6 @@ private fun CardMenuSheet(
                     tint = cardAccent,
                     onClick = { onDismiss(); onRun() }
                 )
-
-                MenuGridDivider()
-
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.ContentCopy,
@@ -814,9 +815,6 @@ private fun CardMenuSheet(
                     tint = Color(0xFFB8BBC4),
                     onClick = { onDismiss(); onCopy() }
                 )
-
-                MenuGridDivider()
-
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.PlaylistAdd,
@@ -826,11 +824,11 @@ private fun CardMenuSheet(
                 )
             }
 
-            HorizontalDivider(color = Outline)
+            Spacer(Modifier.height(5.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
@@ -839,9 +837,6 @@ private fun CardMenuSheet(
                     tint = Amber,
                     onClick = { onDismiss(); onEdit() }
                 )
-
-                MenuGridDivider()
-
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.AddToHomeScreen,
@@ -849,9 +844,6 @@ private fun CardMenuSheet(
                     tint = Color(0xFFB8BBC4),
                     onClick = { onDismiss(); onShortcut() }
                 )
-
-                MenuGridDivider()
-
                 MenuGridButton(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.Delete,
@@ -866,13 +858,34 @@ private fun CardMenuSheet(
 }
 
 @Composable
-private fun MenuGridDivider() {
+private fun NeonMenuIcon(
+    icon: ImageVector,
+    tint: Color,
+    contentDescription: String? = null
+) {
     Box(
-        modifier = Modifier
-            .width(1.dp)
-            .height(76.dp)
-            .background(Outline)
-    )
+        modifier = Modifier.size(44.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = .045f))
+        )
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = .055f))
+        )
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(29.dp)
+        )
+    }
 }
 
 @Composable
@@ -888,42 +901,21 @@ private fun MenuGridButton(
 
     Column(
         modifier = modifier
-            .height(82.dp)
+            .height(80.dp)
             .combinedClickable(
                 enabled = enabled,
                 onClick = onClick
             )
-            .padding(horizontal = 5.dp, vertical = 8.dp),
+            .padding(horizontal = 4.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Box(
-            modifier = Modifier.size(43.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(39.dp)
-                    .clip(CircleShape)
-                    .background(effectiveTint.copy(alpha = .055f))
-            )
+        NeonMenuIcon(
+            icon = icon,
+            tint = effectiveTint
+        )
 
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(effectiveTint.copy(alpha = .055f))
-            )
-
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = effectiveTint,
-                modifier = Modifier.size(29.dp)
-            )
-        }
-
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(3.dp))
 
         Text(
             label,
@@ -1427,7 +1419,7 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     onImportConfig: () -> Unit,
     onExportConfig: () -> Unit,
-    onConnectGoogleDrive: (String, String, String) -> Unit,
+    onConnectGoogleDrive: (String, String, String, String, String, String, String) -> Unit,
     onImportCards: () -> Unit,
     onExportCards: () -> Unit,
     onImportFullBackup: () -> Unit,
@@ -1464,15 +1456,35 @@ private fun SettingsScreen(
     var resetCardsDialog by remember { mutableStateOf(false) }
     var defaultsDialog by remember { mutableStateOf(false) }
     var clearDataDialog by remember { mutableStateOf(false) }
-    var quickDriveDialog by remember { mutableStateOf(false) }
-    var driveConnectDialog by remember { mutableStateOf(false) }
+    var driveSetupDialog by remember { mutableStateOf(false) }
     var termuxConfigDialog by remember { mutableStateOf(false) }
     var driveRemoteName by remember { mutableStateOf("gdrive") }
     var driveClientId by remember { mutableStateOf("") }
     var driveClientSecret by remember { mutableStateOf("") }
+    var driveScope by remember { mutableStateOf("drive") }
+    var driveRootFolderId by remember { mutableStateOf("") }
+    var driveServiceAccountFile by remember { mutableStateOf("") }
+    var driveTeamDrive by remember { mutableStateOf("") }
     var aboutDialog by remember { mutableStateOf(false) }
     var defaultsTransfersText by remember { mutableStateOf(defaultTransfers.toString()) }
     var defaultsCheckersText by remember { mutableStateOf(defaultCheckers.toString()) }
+
+    val serviceAccountPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                val dir = File(context.filesDir, "rclone").apply { mkdirs() }
+                val dest = File(dir, "service-account.json")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                } ?: error("Service Account JSON could not be read.")
+                driveServiceAccountFile = dest.absolutePath
+            }.onFailure {
+                toast(context, "Service Account import failed: ${it.message}")
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         rcloneVersion = withContext(Dispatchers.IO) { RcloneEngine.version(context) }
@@ -1485,8 +1497,12 @@ private fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             SettingsGroup("Rclone") {
-                SettingsRow(Icons.Default.Cloud, "Google Drive Sign-In", "Open the browser and connect like rclone config", onClick = { quickDriveDialog = true })
-                SettingsRow(Icons.Default.Security, "Connect with Custom OAuth", "Use your own Google OAuth client ID and secret", onClick = { driveConnectDialog = true })
+                SettingsRow(
+                    Icons.Default.Cloud,
+                    "Google Drive Setup",
+                    "Configure Drive options first, then authenticate",
+                    onClick = { driveSetupDialog = true }
+                )
                 SettingsRow(Icons.Default.FileOpen, "rclone.conf", "Import", onClick = onImportConfig)
                 SettingsRow(Icons.Default.Code, "Import from Termux", "Show a copyable command to locate and export rclone.conf", onClick = { termuxConfigDialog = true })
                 SettingsRow(Icons.Default.FileDownload, "rclone.conf", "Export", onClick = onExportConfig)
@@ -1627,69 +1643,26 @@ private fun SettingsScreen(
         )
     }
 
-    if (quickDriveDialog) {
+    if (driveSetupDialog) {
         AlertDialog(
-            onDismissRequest = { quickDriveDialog = false },
+            onDismissRequest = { driveSetupDialog = false },
             containerColor = Amoled,
-            title = { Text("Google Drive Sign-In") },
+            title = { Text("Google Drive Setup") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Text(
-                        "This starts the familiar rclone browser sign-in flow. Google opens in your browser, you approve the account, and the token is saved into the app's rclone.conf.",
+                        "Configure the same core Drive options used by rclone config. Browser authorization starts only after these values are ready.",
                         color = TextSecondary,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
-                    )
-                    Text(
-                        "Note: rclone's shared Google OAuth client is being retired during 2026. If this quick flow stops working, use Custom OAuth or import your Termux rclone.conf.",
-                        color = Amber,
-                        fontSize = 11.sp,
+                        fontSize = 11.5.sp,
                         lineHeight = 16.sp
                     )
-                    OutlinedTextField(
-                        value = driveRemoteName,
-                        onValueChange = { driveRemoteName = it.take(40) },
-                        label = { Text("Remote name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = darkTextFieldColors()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onConnectGoogleDrive(driveRemoteName.ifBlank { "gdrive" }, "", "")
-                    quickDriveDialog = false
-                    toast(context, "Waiting for browser authorization…")
-                }) {
-                    Text("Open Sign-In", color = Green)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { quickDriveDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 
-    if (driveConnectDialog) {
-        AlertDialog(
-            onDismissRequest = { driveConnectDialog = false },
-            containerColor = Amoled,
-            title = { Text("Connect Google Drive") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "If this phone already has a working Termux rclone.conf, importing that file is the fastest option and does not require signing in again.",
-                        color = TextSecondary,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        "For a new connection, enter your Google OAuth Desktop client ID and secret. The app opens the browser, waits for the localhost OAuth callback, then saves the token into its own rclone.conf.",
-                        color = TextSecondary,
-                        fontSize = 11.sp
-                    )
                     OutlinedTextField(
                         value = driveRemoteName,
                         onValueChange = { driveRemoteName = it.take(40) },
@@ -1698,42 +1671,135 @@ private fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         colors = darkTextFieldColors()
                     )
+
                     OutlinedTextField(
                         value = driveClientId,
                         onValueChange = { driveClientId = it },
-                        label = { Text("Google OAuth client ID") },
+                        label = { Text("Client ID (optional)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         colors = darkTextFieldColors()
                     )
+
                     OutlinedTextField(
                         value = driveClientSecret,
                         onValueChange = { driveClientSecret = it },
-                        label = { Text("Google OAuth client secret") },
+                        label = { Text("Client secret (optional)") },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         colors = darkTextFieldColors()
                     )
+
+                    OutlinedTextField(
+                        value = driveScope,
+                        onValueChange = { driveScope = it.trim() },
+                        label = { Text("Drive scope") },
+                        placeholder = { Text("drive") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = darkTextFieldColors()
+                    )
+
+                    Text(
+                        "Common scopes: drive, drive.readonly, drive.file, drive.appfolder, drive.metadata.readonly",
+                        color = TextDim,
+                        fontSize = 10.5.sp,
+                        lineHeight = 14.sp
+                    )
+
+                    OutlinedTextField(
+                        value = driveRootFolderId,
+                        onValueChange = { driveRootFolderId = it.trim() },
+                        label = { Text("Root folder ID (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = darkTextFieldColors()
+                    )
+
+                    OutlinedTextField(
+                        value = driveTeamDrive,
+                        onValueChange = { driveTeamDrive = it.trim() },
+                        label = { Text("Shared Drive / Team Drive ID (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = darkTextFieldColors()
+                    )
+
+                    OutlinedButton(
+                        onClick = { serviceAccountPicker.launch("application/json") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(
+                            if (driveServiceAccountFile.isBlank()) {
+                                "Import Service Account JSON (optional)"
+                            } else {
+                                "Service Account JSON selected"
+                            }
+                        )
+                    }
+
+                    if (driveServiceAccountFile.isNotBlank()) {
+                        Text(
+                            driveServiceAccountFile,
+                            color = TextDim,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        TextButton(onClick = { driveServiceAccountFile = "" }) {
+                            Text("Remove Service Account", color = Red)
+                        }
+
+                        Text(
+                            "A Service Account is an alternative to interactive Google sign-in. When this file is selected, the browser OAuth step is skipped.",
+                            color = Amber,
+                            fontSize = 10.5.sp,
+                            lineHeight = 14.sp
+                        )
+                    } else {
+                        Text(
+                            "Without a Service Account, Continue opens the Google browser authorization flow after saving these settings.",
+                            color = TextDim,
+                            fontSize = 10.5.sp,
+                            lineHeight = 14.sp
+                        )
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (driveClientId.isBlank() || driveClientSecret.isBlank()) {
-                        toast(context, "Client ID and client secret are required.")
+                    onConnectGoogleDrive(
+                        driveRemoteName.ifBlank { "gdrive" },
+                        driveClientId,
+                        driveClientSecret,
+                        driveScope.ifBlank { "drive" },
+                        driveRootFolderId,
+                        driveServiceAccountFile,
+                        driveTeamDrive
+                    )
+                    driveSetupDialog = false
+
+                    if (driveServiceAccountFile.isBlank()) {
+                        toast(context, "Waiting for Google browser authorization…")
                     } else {
-                        onConnectGoogleDrive(
-                            driveRemoteName.ifBlank { "gdrive" },
-                            driveClientId,
-                            driveClientSecret
-                        )
-                        driveConnectDialog = false
-                        toast(context, "Waiting for browser authorization…")
+                        toast(context, "Saving Service Account Drive configuration…")
                     }
-                }) { Text("Connect", color = Green) }
+                }) {
+                    Text(
+                        if (driveServiceAccountFile.isBlank()) "Continue to Sign-In" else "Save Drive Setup",
+                        color = Green
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { driveConnectDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { driveSetupDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }

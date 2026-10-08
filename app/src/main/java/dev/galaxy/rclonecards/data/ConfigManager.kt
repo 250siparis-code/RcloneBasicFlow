@@ -65,6 +65,10 @@ object ConfigManager {
         remoteName: String,
         clientId: String,
         clientSecret: String,
+        scope: String,
+        rootFolderId: String,
+        serviceAccountFile: String,
+        teamDrive: String,
         tokenJson: String
     ) {
         val name = remoteName.trim().ifBlank { "gdrive" }
@@ -95,8 +99,11 @@ object ConfigManager {
             appendLine("type = drive")
             if (clientId.isNotBlank()) appendLine("client_id = ${clientId.trim()}")
             if (clientSecret.isNotBlank()) appendLine("client_secret = ${clientSecret.trim()}")
-            appendLine("scope = drive")
-            appendLine("token = ${tokenJson.trim()}")
+            appendLine("scope = ${scope.trim().ifBlank { "drive" }}")
+            if (rootFolderId.isNotBlank()) appendLine("root_folder_id = ${rootFolderId.trim()}")
+            if (serviceAccountFile.isNotBlank()) appendLine("service_account_file = ${serviceAccountFile.trim()}")
+            if (teamDrive.isNotBlank()) appendLine("team_drive = ${teamDrive.trim()}")
+            if (tokenJson.isNotBlank()) appendLine("token = ${tokenJson.trim()}")
         }.trimEnd()
 
         val next = buildString {
