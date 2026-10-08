@@ -63,7 +63,19 @@ object RcloneConfigWizard {
                 })
             }
 
-            parseStep(callConfigWithOAuth(activity, payload))
+            val step = parseStep(
+                callConfigWithOAuth(
+                    activity = activity,
+                    endpoint = "config/create",
+                    payload = payload
+                )
+            )
+            if (step.done) {
+                require(ConfigManager.hasRemote(name)) {
+                    "rclone finished but the remote was not written to rclone.conf."
+                }
+            }
+            step
         }
     }
 
@@ -79,7 +91,6 @@ object RcloneConfigWizard {
             val name = sanitizeRemoteName(remoteName)
             val payload = JSONObject().apply {
                 put("name", name)
-                put("type", "drive")
                 put("parameters", JSONObject())
                 put("opt", JSONObject().apply {
                     put("nonInteractive", true)
@@ -91,7 +102,19 @@ object RcloneConfigWizard {
                 })
             }
 
-            parseStep(callConfigWithOAuth(activity, payload))
+            val step = parseStep(
+                callConfigWithOAuth(
+                    activity = activity,
+                    endpoint = "config/update",
+                    payload = payload
+                )
+            )
+            if (step.done) {
+                require(ConfigManager.hasRemote(name)) {
+                    "rclone finished but the remote was not written to rclone.conf."
+                }
+            }
+            step
         }
     }
 
@@ -190,11 +213,16 @@ object RcloneConfigWizard {
 
     private fun callConfigWithOAuth(
         activity: Activity,
+        endpoint: String,
         payload: JSONObject
     ): JSONObject {
+        require(endpoint == "config/create" || endpoint == "config/update") {
+            "Unsupported rclone config endpoint: $endpoint"
+        }
+
         val process = startRcProcess(
             activity = activity,
-            endpoint = "config/create",
+            endpoint = endpoint,
             payload = payload
         )
 
