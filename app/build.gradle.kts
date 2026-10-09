@@ -11,8 +11,8 @@ android {
         applicationId = "dev.galaxy.rclonecards"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "2.1.0"
+        versionCode = 5
+        versionName = "2.1.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -64,6 +64,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.2")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.animation:animation")

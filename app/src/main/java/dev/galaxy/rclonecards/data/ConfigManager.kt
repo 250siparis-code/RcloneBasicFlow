@@ -47,6 +47,35 @@ object ConfigManager {
             ?: error("File could not be written")
     }
 
+    /** Only install a new, completed setup section. Never replace an existing remote. */
+    @Synchronized
+    fun addRemoteFromSetup(name: String, text: String): Result<Unit> = runCatching {
+        val merged = mergeNewDriveRemote(readText(), name, text)
+        val atomic = android.util.AtomicFile(configFile)
+        val output = atomic.startWrite()
+        try {
+            output.write(merged.toByteArray(Charsets.UTF_8))
+            atomic.finishWrite(output)
+        } catch (error: Throwable) {
+            atomic.failWrite(output)
+            throw error
+        }
+    }
+
+    internal fun mergeNewDriveRemote(original: String, name: String, staged: String): String {
+        require(!original.trimStart().startsWith("RCLONE_ENCRYPT_V")) {
+            "Encrypted configuration cannot be modified by this setup. The original file was preserved."
+        }
+        require(sectionBounds(original.lines(), name) == null) {
+            "Remote '$name' already exists; it was not overwritten."
+        }
+        val lines = staged.lines()
+        val bounds = sectionBounds(lines, name) ?: error("rclone did not save the new remote.")
+        val block = lines.subList(bounds.first, bounds.second).joinToString("\n").trim()
+        require(block.lineSequence().any { it.trim() == "type = drive" }) { "Invalid Drive configuration." }
+        return original + "\n\n" + block + "\n"
+    }
+
     fun hasRemote(name: String): Boolean = sectionBounds(name) != null
 
     fun remoteNames(): List<String> =
