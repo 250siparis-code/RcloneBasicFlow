@@ -1767,11 +1767,9 @@ private fun SettingsScreen(
             val q = question
             if (host == null || q == null) return
 
+            // Empty values are valid for optional rclone OAuth fields.
+            // Forward the answer to rclone and let its state machine validate it.
             val answer = driveAnswer.takeIf { it.isNotBlank() } ?: q.defaultValue
-            if (q.required && answer.isBlank()) {
-                driveWizardError = "This value is required."
-                return
-            }
 
             driveBusy = true
             driveWizardError = null

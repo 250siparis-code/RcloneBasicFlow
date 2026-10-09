@@ -101,6 +101,7 @@ object RcloneConfigWizard {
             val name = sanitizeRemoteName(remoteName)
             val payload = JSONObject().apply {
                 put("name", name)
+                put("type", "drive")
                 put("parameters", configParameters(activity))
                 put("opt", JSONObject().apply {
                     put("nonInteractive", true)
@@ -118,7 +119,7 @@ object RcloneConfigWizard {
                 step = parseStep(
                     callConfigWithOAuth(
                         activity = activity,
-                        endpoint = "config/update",
+                        endpoint = "config/create",
                         payload = payload
                     )
                 )
@@ -334,11 +335,23 @@ object RcloneConfigWizard {
                     )
 
                     val authUrl = status.optString("authUrl", "")
-                    if (authUrl.isNotBlank() && browserOpened.compareAndSet(false, true)) {
-                        activity.runOnUiThread {
-                            activity.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
-                            )
+                    if (authUrl.isNotBlank() && !browserOpened.get()) {
+                        val uri = Uri.parse(authUrl)
+                        val host = uri.host.orEmpty()
+                        val port = if (uri.port > 0) uri.port else 53682
+                        val local = host == "127.0.0.1" || host == "localhost"
+                        val ready = local && runCatching {
+                            java.net.Socket().use { socket ->
+                                socket.connect(java.net.InetSocketAddress(host, port), 700)
+                            }
+                            true
+                        }.getOrDefault(false)
+                        if (ready && browserOpened.compareAndSet(false, true)) {
+                            activity.runOnUiThread {
+                                activity.startActivity(
+                                    Intent(Intent.ACTION_VIEW, uri)
+                                )
+                            }
                         }
                     }
                 }
