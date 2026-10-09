@@ -69,7 +69,7 @@ object JobHistoryStore {
             put("totalBytes",e.totalBytes);put("transfers",e.transfers);put("totalTransfers",e.totalTransfers)
             put("start",e.startedAtMillis ?: JSONObject.NULL);put("end",e.finishedAtMillis)
             put("exit",e.exitCode ?: JSONObject.NULL);put("error",e.lastError ?: JSONObject.NULL)
-        }})
+        })}
         prefs().edit().putString(KEY,a.toString()).apply()
     }
     private fun load():List<JobHistoryEntry>{

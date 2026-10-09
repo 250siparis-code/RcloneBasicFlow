@@ -534,7 +534,6 @@ private fun ModernProgressBar(job:JobState){
 }
 
 @Composable
-private fun DimActionButton@Composable
 private fun DimActionButton(
     icon: ImageVector,
     contentDescription: String,
@@ -576,7 +575,6 @@ private fun CardMenuSheet(
 }
 
 @Composable
-private fun NeonMenuIcon@Composable
 private fun NeonMenuIcon(
     icon: ImageVector,
     tint: Color,
@@ -699,9 +697,9 @@ private fun EditCardScreen(
             command = command.trim(),
             workDir = workDir.trim().ifBlank { "/storage/emulated/0/" },
             color = CardColor.SLATE,
-            customColorHex = ,
+            customColorHex = "",
             iconAlpha = iconAlpha,
-            customIconPath = ,
+            customIconPath = "",
             icon = icon,
             transfers = transfers.toIntOrNull()?.coerceIn(1, 64),
             checkers = checkers.toIntOrNull()?.coerceIn(1, 128),
