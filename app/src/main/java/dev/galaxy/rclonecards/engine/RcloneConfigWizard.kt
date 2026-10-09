@@ -142,11 +142,8 @@ object RcloneConfigWizard {
 
     suspend fun cancel(activity: Activity) = withContext(Dispatchers.IO) {
         runCatching { rcCall(activity, "config/oauthstop", JSONObject(), 5) }
-        pendingRemoteName?.let { name ->
-            if (ConfigManager.hasRemote(name)) {
-                ConfigManager.deleteRemote(name)
-            }
-        }
+        // Never delete a persisted remote on cancellation: OAuth may have succeeded
+        // even when the UI lost its continuation state.
         pendingRemoteName = null
         stopServer(activity)
     }
