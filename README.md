@@ -27,9 +27,13 @@ The interface stays deliberately small: create a card, configure the command, ru
 ## Highlights
 
 - Pure AMOLED black Jetpack Compose interface
-- Editable task cards with custom title, icon, accent and command
+- AMOLED-black adaptive launcher icon and custom notification icon
+- Animated screen transitions
+- Editable task cards with custom title, built-in icon and command
 - Real rclone execution through the bundled **rclone v1.75.1** engine
 - Live percentage, bytes, transfer count, speed, ETA, current file and logs
+- Modern in-card progress with a persistent Completed state
+- 72-hour activity history with date, time, duration and result
 - Android foreground `dataSync` service with wake lock for long operations
 - Pause, resume, stop and single-job queue
 - Exact daily scheduling
@@ -107,7 +111,7 @@ Example command syntax:
 rclone copy "/storage/emulated/0/DCIM/Camera/" "gdrive:Backups/Camera/"
 ```
 
-The app removes terminal-only `--progress` / `-P` flags and uses rclone JSON statistics instead.
+The app normalizes user `--progress` / `-P` flags and automatically adds one `--progress` flag together with JSON statistics.
 
 When needed, these options are added automatically:
 
@@ -156,7 +160,7 @@ Every push to `main` runs the Android workflow:
 5. minified release APK
 6. GitHub Actions artifact upload
 
-Current app version: **1.1.0-beta**<br>
+Current app version: **2.0.0**<br>
 Current ABI: **arm64-v8a**
 
 See [PHONE_BUILD.md](PHONE_BUILD.md) for a phone-only build workflow and [VALIDATION.md](VALIDATION.md) for the release checklist.

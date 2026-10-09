@@ -1,6 +1,7 @@
 package dev.galaxy.rclonecards.service
 
 import android.content.Context
+import dev.galaxy.rclonecards.data.JobHistoryStore
 import dev.galaxy.rclonecards.model.JobState
 import dev.galaxy.rclonecards.model.JobStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,7 +12,11 @@ object JobRepository {
     private val _jobs = MutableStateFlow<Map<String, JobState>>(emptyMap())
     val jobs: StateFlow<Map<String, JobState>> = _jobs.asStateFlow()
 
-    fun init(@Suppress("UNUSED_PARAMETER") context: Context) = Unit
+    fun init(@Suppress("UNUSED_PARAMETER") context: Context) {
+        _jobs.value = JobHistoryStore.latestStates()
+    }
+
+    @Synchronized fun clear() { _jobs.value = emptyMap() }
 
     fun get(cardId: String): JobState? = _jobs.value[cardId]
 

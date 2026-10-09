@@ -63,6 +63,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Basic-Rclone-Flow-v1.1.0-beta-arm64
+          name: Basic-Rclone-Flow-v2.0.0-arm64
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

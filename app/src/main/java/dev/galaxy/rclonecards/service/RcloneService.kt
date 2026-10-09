@@ -18,6 +18,7 @@ import dev.galaxy.rclonecards.R
 import dev.galaxy.rclonecards.data.AppSettings
 import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
+import dev.galaxy.rclonecards.data.JobHistoryStore
 import dev.galaxy.rclonecards.engine.RcloneEngine
 import dev.galaxy.rclonecards.model.JobState
 import dev.galaxy.rclonecards.model.JobStatus
@@ -146,7 +147,6 @@ class RcloneService : Service() {
                 }
 
                 val builder = ProcessBuilder(shellArgs)
-                    .directory(card.workDir.takeIf { it.isNotBlank() }?.let { java.io.File(it) })
                     .redirectErrorStream(false)
 
                 builder.environment().apply {
@@ -186,12 +186,12 @@ class RcloneService : Service() {
 
                 val previous = JobRepository.get(cardId)
                 if (previous?.status == JobStatus.STOPPED) {
-                    JobRepository.update(cardId) { it.copy(exitCode = exit, finishedAtMillis = System.currentTimeMillis()) }
+                    JobRepository.update(cardId) { it.copy(exitCode = exit, finishedAtMillis = it.finishedAtMillis ?: System.currentTimeMillis()) }
                 } else if (exit == 0) {
                     JobRepository.update(cardId) {
                         it.copy(
                             status = JobStatus.COMPLETED,
-                            progressPercent = if (it.totalBytes > 0 || it.totalTransfers > 0) 100 else it.progressPercent,
+                            progressPercent = 100,
                             exitCode = exit,
                             finishedAtMillis = System.currentTimeMillis()
                         )
@@ -228,6 +228,7 @@ class RcloneService : Service() {
                     )
                 }
             } finally {
+                recordHistory(cardId)
                 postResultNotification(cardId)
                 updateForeground()
                 pumpQueue()
@@ -437,7 +438,7 @@ class RcloneService : Service() {
         )
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(statusText)
             .setContentIntent(openPending)
@@ -484,7 +485,7 @@ class RcloneService : Service() {
             state.lastError ?: "rclone finished with an error"
         }
         val notification = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
-            .setSmallIcon(if (ok) android.R.drawable.stat_sys_upload_done else android.R.drawable.stat_notify_error)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(state.title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -505,6 +506,13 @@ class RcloneService : Service() {
             i++
         }
         return if (value >= 100 || i == 0) "%.0f %s".format(value, units[i]) else "%.1f %s".format(value, units[i])
+    }
+
+    private fun recordHistory(cardId: String) {
+        val state=JobRepository.get(cardId) ?: return
+        if(state.status in setOf(JobStatus.COMPLETED,JobStatus.ERROR,JobStatus.STOPPED)) {
+            JobHistoryStore.record(state,CardStore.get(cardId)?.command.orEmpty())
+        }
     }
 
     private fun maybeStopSelf() {

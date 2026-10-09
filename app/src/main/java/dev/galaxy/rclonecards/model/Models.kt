@@ -44,3 +44,20 @@ data class JobState(
     val startedAtMillis: Long? = null,
     val finishedAtMillis: Long? = null
 )
+
+data class JobHistoryEntry(
+    val id: String,
+    val cardId: String,
+    val title: String,
+    val command: String,
+    val status: JobStatus,
+    val progressPercent: Int,
+    val bytes: Long,
+    val totalBytes: Long,
+    val transfers: Long,
+    val totalTransfers: Long,
+    val startedAtMillis: Long?,
+    val finishedAtMillis: Long,
+    val exitCode: Int?,
+    val lastError: String?
+)

@@ -11,8 +11,8 @@ android {
         applicationId = "dev.galaxy.rclonecards"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0-beta"
+        versionCode = 3
+        versionName = "2.0.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -66,6 +66,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 }

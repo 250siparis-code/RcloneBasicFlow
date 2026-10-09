@@ -35,7 +35,7 @@ object RcloneEngine {
 
         require(userArgs.isNotEmpty()) { "rclone subcommand is missing" }
 
-        // --progress terminal kontrol karakterleri üretir. Uygulama bunun yerine JSON stats okur.
+        // Normalize user progress flags; the app adds one canonical --progress flag.
         userArgs.removeAll { it == "--progress" || it == "-P" || it.startsWith("--progress=") }
 
         val args = mutableListOf<String>()
@@ -53,6 +53,7 @@ object RcloneEngine {
         if (!hasOption(userArgs, "--log-level") && !hasVerboseFlag(userArgs)) {
             args += listOf("--log-level", "INFO")
         }
+        args += "--progress"
 
         val transfers = transfersOverride ?: AppSettings.defaultTransfers.value
         val checkers = checkersOverride ?: AppSettings.defaultCheckers.value
