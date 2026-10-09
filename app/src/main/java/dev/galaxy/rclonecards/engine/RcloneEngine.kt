@@ -50,6 +50,7 @@ object RcloneEngine {
         if (!hasOption(userArgs, "--use-json-log")) args += "--use-json-log"
         if (!hasOption(userArgs, "--stats")) args += listOf("--stats", "1s")
         if (!hasOption(userArgs, "--stats-log-level")) args += listOf("--stats-log-level", "NOTICE")
+        if (!hasOption(userArgs, "--stats-one-line")) args += "--stats-one-line"
         if (!hasOption(userArgs, "--log-level") && !hasVerboseFlag(userArgs)) {
             args += listOf("--log-level", "INFO")
         }

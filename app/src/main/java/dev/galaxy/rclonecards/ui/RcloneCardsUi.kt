@@ -8,6 +8,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -73,6 +75,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -231,6 +234,16 @@ fun RcloneCardsRoot(
     var screen: Screen by remember { mutableStateOf(Screen.Home) }
     var menuCardId by remember { mutableStateOf<String?>(null) }
     var deleteCardId by remember { mutableStateOf<String?>(null) }
+    var exitConfirm by remember { mutableStateOf(false) }
+    BackHandler {
+        when {
+            deleteCardId != null -> deleteCardId = null
+            menuCardId != null -> menuCardId = null
+            screen is Screen.History -> screen = Screen.Settings
+            screen != Screen.Home -> screen = Screen.Home
+            else -> exitConfirm = true
+        }
+    }
 
     LaunchedEffect(external) {
         val value = external ?: return@LaunchedEffect
@@ -361,11 +374,22 @@ fun RcloneCardsRoot(
             )
         }
 
+        if (exitConfirm) {
+            AlertDialog(onDismissRequest = { exitConfirm = false },
+                modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+                containerColor = Color.Black, tonalElevation = 0.dp,
+                title = { Text("Exit Basic Rclone Flow?") },
+                text = { Text("Active transfers continue in the background.", color = TextSecondary) },
+                confirmButton = { TextButton(onClick = { (context as? Activity)?.finish() }) { Text("Exit", color = TextPrimary) } },
+                dismissButton = { TextButton(onClick = { exitConfirm = false }) { Text("Cancel", color = TextSecondary) } })
+        }
         val deleteCard = cards.firstOrNull { it.id == deleteCardId }
         if (deleteCard != null) {
             AlertDialog(
+                modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+                tonalElevation = 0.dp,
+                containerColor = Color.Black,
                 onDismissRequest = { deleteCardId = null },
-                containerColor = Amoled,
                 title = { Text("Delete card?") },
                 text = { Text("${deleteCard.title} card and its settings will be deleted.", color = TextSecondary) },
                 confirmButton = {
@@ -663,7 +687,7 @@ private fun EditCardScreen(
     var iconAlpha by remember(card.id) { mutableStateOf(card.iconAlpha.coerceIn(0.15f, 1f)) }
     var icon by remember(card.id) { mutableStateOf(card.icon) }
     var customIconPath by remember(card.id) { mutableStateOf(card.customIconPath) }
-    val currentAccent = customAccent(customColorHex) ?: accent(color)
+    val currentAccent = IconMuted
     var transfers by remember(card.id) { mutableStateOf(card.transfers?.toString().orEmpty()) }
     var checkers by remember(card.id) { mutableStateOf(card.checkers?.toString().orEmpty()) }
     var bwlimit by remember(card.id) { mutableStateOf(card.bwlimit) }
@@ -695,10 +719,10 @@ private fun EditCardScreen(
             subtitle = subtitle,
             actionLabel = actionLabel.ifBlank { "Run" },
             command = command.trim(),
-            workDir = workDir.trim().ifBlank { "/storage/emulated/0/" },
+            workDir = "",
             color = CardColor.SLATE,
             customColorHex = "",
-            iconAlpha = iconAlpha,
+            iconAlpha = 1f,
             customIconPath = "",
             icon = icon,
             transfers = transfers.toIntOrNull()?.coerceIn(1, 64),
@@ -789,30 +813,9 @@ private fun EditCardScreen(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { iconPicker.launch("image/*") },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Add Custom Icon")
-                }
-
-                if (customIconPath.isNotBlank()) {
-                    OutlinedButton(
-                        onClick = { customIconPath = "" },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Red),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Remove")
-                    }
-                }
-            }
-
             SectionLabel("Command")
             Text(
-                "Enter a normal rclone command. Quoted paths and Termux-style shared-storage paths are supported.",
+                "Example: rclone copy /storage/emulated/0/Download gdrive:Backup. Optional: --exclude, --include, --dry-run, --bwlimit. --progress, --checkers and --transfers are added automatically (unless overridden).",
                 color = TextDim,
                 fontSize = 11.sp
             )
@@ -874,7 +877,7 @@ private fun EditCardScreen(
             }
 
             SectionLabel("Schedule")
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("Run automatically every day", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Text(
@@ -917,16 +920,6 @@ private fun EditCardScreen(
                 }
             }
 
-            Button(
-                onClick = { onSave(buildCard()) },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black),
-                shape = RoundedCornerShape(15.dp)
-            ) {
-                Icon(Icons.Default.Save, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Save", fontWeight = FontWeight.Bold)
-            }
         }
     }
 }
@@ -983,7 +976,7 @@ private fun DetailScreen(
     onRun: () -> Unit,
     onMenu: () -> Unit
 ) {
-    val accent = accent(card?.color ?: CardColor.GREEN)
+    val accent = IconMuted
     val state = job ?: JobState(cardId = card?.id.orEmpty(), title = card?.title ?: "Task")
 
     Column(Modifier.fillMaxSize().background(Amoled)) {
@@ -998,13 +991,13 @@ private fun DetailScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(statusText(state.status), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Text("%${state.progressPercent}", color = accent, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Text("${state.progressPercent}%", color = IconMuted, fontWeight = FontWeight.Black, fontSize = 20.sp)
             }
             Spacer(Modifier.height(10.dp))
             LinearProgressIndicator(
                 progress = state.progressPercent / 100f,
                 modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                color = accent,
+                color = IconMuted,
                 trackColor = Color(0xFF29292E)
             )
             Spacer(Modifier.height(18.dp))
@@ -1344,8 +1337,13 @@ private fun SettingsScreen(
         val termuxCommand = "CFG=\"$(rclone config file | tail -n 1)\"\ncp \"\$CFG\" ~/storage/downloads/rclone.conf"
 
         AlertDialog(
+
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+
+            tonalElevation = 0.dp,
+
+            containerColor = Color.Black,
             onDismissRequest = { termuxConfigDialog = false },
-            containerColor = Amoled,
             title = { Text("Import from Termux") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1496,8 +1494,13 @@ private fun SettingsScreen(
         }
 
         AlertDialog(
+
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+
+            tonalElevation = 0.dp,
+
+            containerColor = Color.Black,
             onDismissRequest = { if (!driveBusy) closeSetup() },
-            containerColor = Amoled,
             title = {
                 Text(
                     when {
@@ -1711,8 +1714,10 @@ private fun SettingsScreen(
 
     if (remotesDialog) {
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            tonalElevation = 0.dp,
+            containerColor = Color.Black,
             onDismissRequest = { if (remoteBusyName == null) remotesDialog = false },
-            containerColor = Amoled,
             title = { Text("Manage Google Drive") },
             text = {
                 Column(
@@ -1831,8 +1836,10 @@ private fun SettingsScreen(
 
     remoteEditName?.let { remote ->
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            tonalElevation = 0.dp,
+            containerColor = Color.Black,
             onDismissRequest = { remoteEditName = null },
-            containerColor = Amoled,
             title = { Text("Edit $remote") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1875,8 +1882,10 @@ private fun SettingsScreen(
 
     deleteRemoteName?.let { remote ->
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            tonalElevation = 0.dp,
+            containerColor = Color.Black,
             onDismissRequest = { deleteRemoteName = null },
-            containerColor = Amoled,
             title = { Text("Delete $remote?") },
             text = {
                 Text(
@@ -1907,8 +1916,10 @@ private fun SettingsScreen(
 
     if (aboutDialog) {
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            tonalElevation = 0.dp,
+            containerColor = Color.Black,
             onDismissRequest = { aboutDialog = false },
-            containerColor = Amoled,
             title = { Text("Basic Rclone Flow") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1942,8 +1953,10 @@ private fun SettingsScreen(
 
     if (defaultsDialog) {
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            tonalElevation = 0.dp,
+            containerColor = Color.Black,
             onDismissRequest = { defaultsDialog = false },
-            containerColor = Amoled,
             title = { Text("Default rclone options") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1988,8 +2001,10 @@ private fun SettingsScreen(
 
     if (clearCardsDialog) {
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            tonalElevation = 0.dp,
+            containerColor = Color.Black,
             onDismissRequest = { clearCardsDialog = false },
-            containerColor = Amoled,
             title = { Text("Clear all cards?") },
             text = {
                 Text(
@@ -2015,8 +2030,10 @@ private fun SettingsScreen(
 
     if (clearDataDialog) {
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            tonalElevation = 0.dp,
+            containerColor = Color.Black,
             onDismissRequest = { clearDataDialog = false },
-            containerColor = Amoled,
             title = { Text("Clear app data?") },
             text = {
                 Text(

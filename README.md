@@ -160,7 +160,7 @@ Every push to `main` runs the Android workflow:
 5. minified release APK
 6. GitHub Actions artifact upload
 
-Current app version: **2.0.0**<br>
+Current app version: **2.1.0**<br>
 Current ABI: **arm64-v8a**
 
 See [PHONE_BUILD.md](PHONE_BUILD.md) for a phone-only build workflow and [VALIDATION.md](VALIDATION.md) for the release checklist.

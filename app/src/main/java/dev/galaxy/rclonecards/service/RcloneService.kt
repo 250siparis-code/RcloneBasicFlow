@@ -269,6 +269,9 @@ class RcloneService : Service() {
                 append(msg.replace('\n', ' '))
             }
 
+            // Rclone versions also emit progress as JSON messages rather than a stats object.
+            // Parse the human-readable one-line stats as a fallback.
+            if (obj.optJSONObject("stats") == null) parseProgressText(cardId, msg)
             val stats = obj.optJSONObject("stats")
             if (stats != null) {
                 val bytes = stats.optLong("bytes", 0L)
@@ -289,7 +292,7 @@ class RcloneService : Service() {
                 }
                 JobRepository.update(cardId) {
                     it.copy(
-                        progressPercent = percent,
+                        progressPercent = maxOf(it.progressPercent, if (it.status == JobStatus.RUNNING || it.status == JobStatus.PAUSED) percent.coerceAtMost(99) else percent),
                         bytes = bytes,
                         totalBytes = totalBytes,
                         transfers = transfers,
@@ -308,9 +311,15 @@ class RcloneService : Service() {
             }
         }
 
-        if (!parsedJson && streamLabel == "ERR") {
-            explicitError = raw.trim()
-            display = "ERROR  ${raw.trim()}"
+        if (!parsedJson) {
+            parseProgressText(cardId, raw)
+            val isError = Regex("(?i)(error|fatal|failed|permission denied|unauthorized|not found)").containsMatchIn(raw)
+            if (isError) {
+                explicitError = raw.trim()
+                display = "ERROR  ${raw.trim()}"
+            } else {
+                display = "INFO  ${raw.trim()}"
+            }
         }
 
         explicitError?.takeIf { it.isNotBlank() }?.let { message ->
@@ -319,6 +328,30 @@ class RcloneService : Service() {
 
         JobRepository.appendLog(cardId, display.take(1800))
         updateForeground()
+    }
+
+    private fun parseProgressText(cardId: String, message: String) {
+        // Matches e.g. "Transferred: 42.13 MiB / 52.13 MiB, 81%" and
+        // "Transferred: 2 / 3, 66%"; never mistake a single file's 100% for job completion.
+        val clean = message.replace(Regex("""\[[;\d]*[ -/]*[@-~]"""), "").replace('\r', ' ')
+        val pct = Regex("""(?i)Transferred:\s*[^\n]*?[,\s]+(\d{1,3})%""").find(clean)
+            ?.groupValues?.getOrNull(1)?.toIntOrNull()
+        val bytes = Regex("""(?i)Transferred:\s*([0-9.]+)\s*(B|KiB|MiB|GiB|TiB)\s*/\s*([0-9.]+)\s*(B|KiB|MiB|GiB|TiB)""").find(clean)
+        val counts = Regex("""(?i)Transferred:\s*(\d+)\s*/\s*(\d+)\s*,\s*(\d{1,3})%""").find(clean)
+        if (pct == null && bytes == null && counts == null) return
+        fun amount(v: String, unit: String): Long {
+            val mult = when (unit.lowercase()) { "kib" -> 1024.0; "mib" -> 1048576.0; "gib" -> 1073741824.0; "tib" -> 1099511627776.0; else -> 1.0 }
+            return ((v.toDoubleOrNull() ?: 0.0) * mult).toLong()
+        }
+        JobRepository.update(cardId) { state ->
+            val running = state.status == JobStatus.RUNNING || state.status == JobStatus.PAUSED
+            val p = (pct ?: counts?.groupValues?.get(3)?.toIntOrNull() ?: state.progressPercent).coerceIn(0, if (running) 99 else 100)
+            state.copy(progressPercent = maxOf(state.progressPercent, p),
+                bytes = bytes?.let { amount(it.groupValues[1], it.groupValues[2]) } ?: state.bytes,
+                totalBytes = bytes?.let { amount(it.groupValues[3], it.groupValues[4]) } ?: state.totalBytes,
+                transfers = counts?.groupValues?.get(1)?.toLongOrNull() ?: state.transfers,
+                totalTransfers = counts?.groupValues?.get(2)?.toLongOrNull() ?: state.totalTransfers)
+        }
     }
 
     private fun pauseJob(cardId: String) {
