@@ -1,3 +1,26 @@
+# Bilinen sorunlar / Known unresolved issues — yardım aranıyor
+
+**Google Drive aktarımı güvenilir çalışmıyor. Proje topluluk katkılarına ve bağımsız forklarla devam edilmesine açıktır. Bu sürümleri güvenilir bir yedekleme aracı olarak sunmuyoruz.**
+
+- **Yükleme takılması çözülmedi:** tüm byte miktarı %100'e ulaştığı halde bir veya iki dosya rclone içinde aktarılıyor olarak kalabiliyor; uygulama %99'da bekliyor. Son cihaz testinde 47.535 MiB işlendi, fakat yaklaşık 1 dakika 38 saniye sonunda tamamlanan dosya sayısı hâlâ `0 / 2` idi; kullanıcı işlemi durdurdu.
+- **Sayaç/hedef uyuşmazlığı:** kullanıcı 800 MB işlenmiş görünürken Drive'da yalnızca 14 MB dosya gördüğünü ve başka bir denemede tamamlanan dosya sayısının hedefle uyuşmadığını bildirdi. Bu raporların kesin nedeni doğrulanmadı. İşlenen byte, tamamlanan dosya ve Drive'da gerçekten bulunan dosya aynı şey değildir.
+- **Stop ve diğer son düzeltmeler:** Stop'un uygulamayı kapatması için kod değiştirildi ve yerel testler geçti; cihazda sorunun kesin giderildiğine dair ayrı teyit yok. İlerleme/bildirim, modal kenarlıkları ve kısayollar da değiştirilmiş olsa da tüm cihaz senaryoları doğrulanmadı.
+- **Google Drive kimliği:** cihaz logu hâlâ rclone'un ortak `client_id` kimliğinin kullanıldığını bildiriyor. Uyarı mevcut; bunun yükleme takılmasının nedeni olduğu kanıtlanmadı.
+- **Eski APK güncellemesi:** Build #20 imza anahtarı yapılandırılmış CI önbelleğinden geri alınamadı. Farklı anahtarla imzalanan APK aynı uygulamanın üzerine kurulamaz. Verileri silmek çözüm olarak önerilmemeli.
+
+**Derleme başarısı, OAuth bağlantısı veya yerel dosya kopyalama testi, Android → Google Drive yüklemesinin çalıştığının kanıtı değildir.**
+
+English: Drive uploads remain unresolved. Processed bytes can reach 100% without file completion; destination/counter discrepancies are reported. Contributors and forks are welcome. See the evidence, attempted fixes and verification limits below.
+
+- [Açık aktarım sorunu / upload issue #2](https://github.com/250siparis-code/BasicRcloneFlow/issues/2)
+- [Geliştirici devir belgesi / developer handoff](HANDOFF.md)
+- [Katkı ve fork rehberi / contributing](CONTRIBUTING.md)
+- [En güncel deneysel kod / latest experimental source](https://github.com/250siparis-code/BasicRcloneFlow/tree/fix/drive-setup-lifecycle) — **2.1.4**, commit `ba05d294ef50be50c6c7dbe39e8f5faec2e903f7`, [draft PR #1](https://github.com/250siparis-code/BasicRcloneFlow/pull/1).
+
+`main` contains the earlier **2.1.0 / Build #20** code plus these handoff documents. The experimental changes are available for review and continuation; they are not presented as a solved Drive uploader. Google Drive setup/OAuth was confirmed working by the user on the experimental branch, while the original setup dialog problem remains relevant to `main`.
+
+---
+
 <p align="center">
   <img src="docs/logo.svg" width="132" alt="Basic Rclone Flow logo">
 </p>
@@ -13,7 +36,7 @@
   <img alt="rclone" src="https://img.shields.io/badge/rclone-v1.75.1-3F79AD">
   <img alt="ABI" src="https://img.shields.io/badge/ABI-arm64--v8a-6B7280">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-22C55E">
-  <img alt="Build" src="https://github.com/250siparis-code/RcloneBasicFlow/actions/workflows/android.yml/badge.svg">
+  <img alt="Build" src="https://github.com/250siparis-code/BasicRcloneFlow/actions/workflows/android.yml/badge.svg">
 </p>
 
 > **Current cloud scope:** Google Drive only. Local Android storage is supported as a source or destination. Other rclone cloud backends are intentionally not bundled yet.
@@ -111,7 +134,7 @@ Example command syntax:
 rclone copy "/storage/emulated/0/DCIM/Camera/" "gdrive:Backups/Camera/"
 ```
 
-The app normalizes user `--progress` / `-P` flags and automatically adds one `--progress` flag together with JSON statistics.
+The experimental branch removes terminal `--progress` / `-P` flags and uses periodic JSON statistics with a fallback for text reports. Its completed-file counter is separate from processed bytes.
 
 When needed, these options are added automatically:
 
@@ -160,7 +183,7 @@ Every push to `main` runs the Android workflow:
 5. minified release APK
 6. GitHub Actions artifact upload
 
-Current app version: **2.1.0**<br>
+Main branch app version: **2.1.0** (earlier Build #20 source) — latest experimental version: **2.1.4** in PR #1<br>
 Current ABI: **arm64-v8a**
 
 See [PHONE_BUILD.md](PHONE_BUILD.md) for a phone-only build workflow and [VALIDATION.md](VALIDATION.md) for the release checklist.
@@ -180,9 +203,9 @@ See [PHONE_BUILD.md](PHONE_BUILD.md) for a phone-only build workflow and [VALIDA
 
 ## Project status
 
-Basic Rclone Flow currently focuses on making **Google Drive + local Android storage** reliable before expanding to additional rclone providers.
+Development is open for community continuation. The Drive upload defect remains unresolved; see the warning at the top and [HANDOFF.md](HANDOFF.md).
 
-The application package ID remains `dev.galaxy.rclonecards` so existing test installations can upgrade without becoming a separate app.
+The normal package is `dev.galaxy.rclonecards`; the experimental isolated package is `dev.galaxy.rclonecards.drivetest`. An upgrade requires both a matching package ID and signing certificate. Independent fork builds do not automatically inherit the signing key of an installed APK.
 
 ## Credits
 
