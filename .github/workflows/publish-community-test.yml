@@ -1,0 +1,76 @@
+name: Publish 2.1.4 community test APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-community-test.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    if: github.repository == '250siparis-code/BasicRcloneFlow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check the tested source run
+        run: |
+          test "$(gh api repos/$GH_REPO/actions/runs/38011705099 --jq .head_sha)" = 'ba05d294ef50be50c6c7dbe39e8f5faec2e903f7'
+          test "$(gh api repos/$GH_REPO/actions/runs/38011705099 --jq .conclusion)" = 'success'
+
+      - name: Download the isolated APK from successful Build 27
+        uses: actions/download-artifact@v4
+        with:
+          name: Basic-Rclone-Flow-v2.1.4-Drive-Test-arm64
+          run-id: 38011705099
+          github-token: ${{ github.token }}
+          path: apk
+
+      - name: Verify and prepare public assets
+        run: |
+          test -s apk/app-driveTest.apk
+          cp apk/app-driveTest.apk BasicRcloneFlow-v2.1.4-arm64-test.apk
+          APK_SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          test -n "$APK_SIGNER"
+          "$APK_SIGNER" verify --print-certs BasicRcloneFlow-v2.1.4-arm64-test.apk
+          sha256sum BasicRcloneFlow-v2.1.4-arm64-test.apk > SHA256SUMS.txt
+
+      - name: Publish the explicitly experimental release
+        run: |
+          cat > release-notes.md <<'NOTES'
+          ## Test sürümü — Drive aktarım sorunu çözülmedi
+
+          Basic Rclone Flow 2.1.4'ün sorunları incelemek isteyen kullanıcılar ve geliştiriciler için yayımlanan Android ARM64 APK'sı. Güvenilir yedekleme sürümü olarak sunulmuyor.
+
+          **Bilinen sorun:** işlenen byte %100'e ulaşsa bile bir veya iki dosyanın Drive aktarımı tamamlanmayabiliyor; işlem %99'da bekleyebiliyor. Son cihaz testinde 47.535 MiB işlendi, ancak yaklaşık 1 dakika 38 saniye sonunda tamamlanan dosya sayısı 0 / 2 idi. Kullanıcı işlemi durdurdu. Sayaç ile gerçek Drive dosyalarının uyuşmadığı başka denemeler de bildirildi.
+
+          Stop, ilerleme ve doğrulama kodları değiştirilmiş olsa da yükleme takılması çözülmedi. Yeşil derleme ve OAuth bağlantısı, Drive yüklemesinin çalıştığının kanıtı değildir.
+
+          ### İndir ve dene
+          Assets bölümündeki `BasicRcloneFlow-v2.1.4-arm64-test.apk` dosyasını indir. Android 8+ ve ARM64 gerekir. Uygulamanın görünen adı Basic Rclone Flow; izole test paketinin kimliği `dev.galaxy.rclonecards.drivetest`.
+
+          APK başarılı GitHub Actions Build #27'den alınmıştır. GitHub CI imzası, sohbet üzerinden verilen APK'nın veya eski kurulumların imzasından farklı olabilir. İmza uyuşmazlığını aşmak için mevcut uygulamayı/verilerini silmeyin; ayrı bir test cihazı/profili kullanın veya geliştirici kendi forkunda ayrı paket kimliğiyle derlesin. Bağlantı ve kart yedeklerini özel tutun.
+
+          ### Sorunu yeniden üretme
+          Ayrı bir test klasörüne iki dosya koyun, Drive'a copy kartı oluşturun ve başlatın. İşlenen byte yüzdesinin yanında tamamlanan dosya sayısını, son logu ve Drive'daki gerçek dosya adlarını/boyutlarını karşılaştırın. `Copy log` çıktısını paylaşmadan önce kişisel yolları temizleyin; OAuth token, client secret veya rclone.conf yayımlamayın.
+
+          English: experimental APK for reproducing the unresolved Google Drive upload stall. Do not mistake 100% processed bytes or a successful build for completed uploads. Contributors and independent forks are welcome.
+
+          Source code: `ba05d294ef50be50c6c7dbe39e8f5faec2e903f7` (2.1.4); release tag points to the same app code plus handoff documentation.
+
+          - Upload issue: https://github.com/250siparis-code/BasicRcloneFlow/issues/2
+          - Developer handoff: https://github.com/250siparis-code/BasicRcloneFlow/blob/main/HANDOFF.md
+          - Contributing/forks: https://github.com/250siparis-code/BasicRcloneFlow/blob/main/CONTRIBUTING.md
+          - Experimental PR: https://github.com/250siparis-code/BasicRcloneFlow/pull/1
+          NOTES
+          gh release create v2.1.4-community-test \
+            BasicRcloneFlow-v2.1.4-arm64-test.apk SHA256SUMS.txt \
+            --target 9da959365e161ad93351efa2230b1f6145f3ed31 \
+            --title 'Basic Rclone Flow 2.1.4 — unresolved Drive upload test' \
+            --prerelease --notes-file release-notes.md
