@@ -10,6 +10,8 @@
 
 **Derleme başarısı, OAuth bağlantısı veya yerel dosya kopyalama testi, Android → Google Drive yüklemesinin çalıştığının kanıtı değildir.**
 
+**[2.1.4 test APK’sını indir / Download the test APK](https://github.com/250siparis-code/BasicRcloneFlow/releases/download/v2.1.4-community-test/BasicRcloneFlow-v2.1.4-arm64-test.apk)** — Android 8+, ARM64, izole test paketi. [Sürüm notları / release notes](https://github.com/250siparis-code/BasicRcloneFlow/releases/tag/v2.1.4-community-test). Aktarım sorunu çözülmedi; kurulumdan önce imza ve veri koruma notlarını okuyun.
+
 English: Drive uploads remain unresolved. Processed bytes can reach 100% without file completion; destination/counter discrepancies are reported. Contributors and forks are welcome. See the evidence, attempted fixes and verification limits below.
 
 - [Açık aktarım sorunu / upload issue #2](https://github.com/250siparis-code/BasicRcloneFlow/issues/2)
