@@ -13,10 +13,17 @@ android {
         targetSdk = 34
         versionCode = 5
         versionName = "2.1.1"
+        manifestPlaceholders["appLabel"] = "Basic Rclone Flow"
+        manifestPlaceholders["oauthScheme"] = "basic-rclone-flow"
+        buildConfigField("String", "OAUTH_SCHEME", "\"basic-rclone-flow\"")
 
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
+    }
+
+    signingConfigs.getByName("debug") {
+        System.getenv("RCLONE_KEYSTORE_PATH")?.let { storeFile = file(it) }
     }
 
     buildTypes {
@@ -28,6 +35,15 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        create("driveTest") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".drivetest"
+            versionNameSuffix = "-drive-test"
+            matchingFallbacks += listOf("release")
+            manifestPlaceholders["appLabel"] = "Basic Rclone Flow Drive Test"
+            manifestPlaceholders["oauthScheme"] = "basic-rclone-flow-test"
+            buildConfigField("String", "OAUTH_SCHEME", "\"basic-rclone-flow-test\"")
         }
     }
 

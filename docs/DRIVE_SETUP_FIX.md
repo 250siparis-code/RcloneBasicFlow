@@ -41,7 +41,10 @@ approve a real Google account, exchange a real token, or list a real Drive.
 
 Android device acceptance remains required:
 
-1. Install a CI-signed upgrade over Build 20 without uninstalling or clearing data.
+1. Install the isolated `Drive Test` APK alongside the existing app. It has a
+   separate application ID, private data directory and OAuth return scheme.
+   Do not uninstall or clear the existing app. A normal APK can be used as an
+   upgrade only if its signing certificate matches the installed version.
 2. Use a new remote name; confirm Start Setup shows Client ID, then Client Secret.
 3. Rotate on the Client ID screen and while browser approval is pending.
 4. Complete Google consent, return to the app, and require the live listing result.
@@ -64,3 +67,21 @@ not available and were not altered. Do not overwrite them when applying this pat
   offered as an in-place upgrade. Use the existing CI signing cache for delivery.
 - Real Google OAuth on Android and regression tests on the user's device remain
   outstanding. Build success and fake-credential redirects do not prove those.
+
+## GitHub validation and signing discovery
+
+- GitHub installation access was restored and PR #1 was created.
+- Build #22 passed the unit tests, real rclone protocol test and native/minified
+  Android build. Its source tree exactly matched the locally validated tree.
+- Build #22 certificate SHA-256 is
+  `a7ae858918018155f0f2f0e23f8374310bb5ed9bc817992fe5fa3c427e00fc20`.
+  Build #20 used
+  `4cacc83550d680f7deb762f85025703433cda75f23ef1047deb841b4bfcc03d5`.
+  Therefore Build #22 is not an in-place upgrade for Build #20.
+- Both CI logs show a signing-key cache miss and a post-build warning that the
+  cached key path did not exist. Preserving the cache step alone did not preserve
+  the actual signing key. CI now explicitly creates and uses that cached path.
+  This fixes future cache use; it cannot recover the missing Build #20 private key.
+- The separate minified `driveTest` variant is provided for device validation
+  without touching the existing installation. Its callback scheme is isolated
+  in the manifest, Activity, notification and rclone OAuth template.

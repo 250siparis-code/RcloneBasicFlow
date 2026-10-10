@@ -154,7 +154,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val deepLink = intent?.data
-        if (deepLink?.scheme == "basic-rclone-flow" && deepLink.host == "oauth") {
+        if (deepLink?.scheme == BuildConfig.OAUTH_SCHEME && deepLink.host == "oauth") {
             val status = deepLink.getQueryParameter("status").orEmpty().ifBlank { "return" }
             externalNavigation.value = "oauth:$status"
         }

@@ -1,6 +1,7 @@
 package dev.galaxy.rclonecards.engine
 
 import android.content.Context
+import dev.galaxy.rclonecards.BuildConfig
 import android.os.Handler
 import android.os.Looper
 import java.util.UUID
@@ -170,7 +171,8 @@ object RcloneConfigWizard {
 
         val destination = File(directory, OAUTH_TEMPLATE_ASSET)
         activity.assets.open(OAUTH_TEMPLATE_ASSET).use { input ->
-            destination.outputStream().use { output -> input.copyTo(output) }
+            val template = input.bufferedReader().readText()
+            destination.writeText(template.replace("basic-rclone-flow://", "${BuildConfig.OAUTH_SCHEME}://"))
         }
         return destination
     }

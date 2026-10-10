@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import dev.galaxy.rclonecards.MainActivity
 import dev.galaxy.rclonecards.R
+import dev.galaxy.rclonecards.BuildConfig
 
 /** Keeps the app process eligible to finish the loopback OAuth exchange in the browser. */
 class DriveSetupService : Service() {
@@ -21,7 +22,7 @@ class DriveSetupService : Service() {
         manager.createNotificationChannel(NotificationChannel("drive_setup", "Google Drive setup", NotificationManager.IMPORTANCE_LOW))
         val open = Intent(this, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
-            data = android.net.Uri.parse("basic-rclone-flow://oauth?status=return")
+            data = android.net.Uri.parse("${BuildConfig.OAUTH_SCHEME}://oauth?status=return")
         }
         val notification = NotificationCompat.Builder(this, "drive_setup")
             .setSmallIcon(R.drawable.ic_notification)
