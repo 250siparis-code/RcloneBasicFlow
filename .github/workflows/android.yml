@@ -2,6 +2,8 @@ name: Build Basic Rclone Flow
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [ "main" ]
   push:
     branches: [ "main" ]
 
@@ -54,8 +56,27 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Ensure cached signing key is used
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+          echo "RCLONE_KEYSTORE_PATH=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
+
+      - name: Test configuration response handling
+        run: gradle --no-daemon :app:testDebugUnitTest
+
+      - name: Test real rclone configuration protocol
+        run: |
+          curl --fail --location https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-linux-amd64.zip -o /tmp/rclone-test.zip
+          unzip -q /tmp/rclone-test.zip -d /tmp/rclone-test
+          python3 scripts/test-drive-protocol.py /tmp/rclone-test/rclone-v1.75.1-linux-amd64/rclone
+          python3 scripts/test-transfer-progress.py /tmp/rclone-test/rclone-v1.75.1-linux-amd64/rclone
+          python3 scripts/test-transfer-stop.py /tmp/rclone-test/rclone-v1.75.1-linux-amd64/rclone
+
       - name: Build minified APK
-        run: gradle --no-daemon :app:assembleRelease
+        run: gradle --no-daemon :app:assembleRelease :app:assembleDriveTest
 
       - name: Verify APK output
         run: test -s app/build/outputs/apk/release/app-release.apk
@@ -63,6 +84,13 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Basic-Rclone-Flow-v2.1.0-arm64
+          name: Basic-Rclone-Flow-v2.1.4-arm64
           path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload isolated Drive test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Basic-Rclone-Flow-v2.1.4-Drive-Test-arm64
+          path: app/build/outputs/apk/driveTest/app-driveTest.apk
           if-no-files-found: error

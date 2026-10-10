@@ -33,7 +33,7 @@ object JobHistoryStore {
             status=state.status, progressPercent=state.progressPercent, bytes=state.bytes,
             totalBytes=state.totalBytes, transfers=state.transfers, totalTransfers=state.totalTransfers,
             startedAtMillis=state.startedAtMillis, finishedAtMillis=end, exitCode=state.exitCode,
-            lastError=state.lastError
+            lastError=state.lastError, confirmedBytes=state.confirmedBytes, confirmedFiles=state.confirmedFiles
         )
         _entries.value=prune(listOf(e)+_entries.value.filterNot{it.id==e.id}).take(500)
         save()
@@ -51,7 +51,7 @@ object JobHistoryStore {
                 progressPercent=if(e.status==JobStatus.COMPLETED)100 else e.progressPercent,
                 bytes=e.bytes,totalBytes=e.totalBytes,transfers=e.transfers,totalTransfers=e.totalTransfers,
                 lastError=e.lastError,exitCode=e.exitCode,startedAtMillis=e.startedAtMillis,
-                finishedAtMillis=e.finishedAtMillis
+                finishedAtMillis=e.finishedAtMillis, confirmedBytes=e.confirmedBytes, confirmedFiles=e.confirmedFiles
             )
         }
         return out
@@ -69,6 +69,7 @@ object JobHistoryStore {
             put("totalBytes",e.totalBytes);put("transfers",e.transfers);put("totalTransfers",e.totalTransfers)
             put("start",e.startedAtMillis ?: JSONObject.NULL);put("end",e.finishedAtMillis)
             put("exit",e.exitCode ?: JSONObject.NULL);put("error",e.lastError ?: JSONObject.NULL)
+            put("confirmedBytes",e.confirmedBytes ?: JSONObject.NULL);put("confirmedFiles",e.confirmedFiles ?: JSONObject.NULL)
         })}
         prefs().edit().putString(KEY,a.toString()).apply()
     }
@@ -87,7 +88,9 @@ object JobHistoryStore {
                         totalTransfers=o.optLong("totalTransfers"),
                         startedAtMillis=if(o.isNull("start"))null else o.optLong("start"),
                         finishedAtMillis=o.optLong("end"),exitCode=if(o.isNull("exit"))null else o.optInt("exit"),
-                        lastError=if(o.isNull("error"))null else o.optString("error")
+                        lastError=if(o.isNull("error"))null else o.optString("error"),
+                        confirmedBytes=if(o.isNull("confirmedBytes"))null else o.optLong("confirmedBytes"),
+                        confirmedFiles=if(o.isNull("confirmedFiles"))null else o.optLong("confirmedFiles")
                     ))
                 }
             }

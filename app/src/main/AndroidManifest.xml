@@ -18,7 +18,7 @@
         android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Basic Rclone Flow"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@style/Theme.RcloneCards">
 
@@ -36,10 +36,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="basic-rclone-flow"
+                    android:scheme="${oauthScheme}"
                     android:host="oauth" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.DriveSetupService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".service.RcloneService"

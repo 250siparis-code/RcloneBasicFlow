@@ -24,7 +24,7 @@ object RcloneEngine {
         val parsed = ShellWords.parse(rawCommand.trim())
         require(parsed.isNotEmpty()) { "Command is empty" }
 
-        val userArgs = parsed.toMutableList()
+        val userArgs = TransferOutput.normalize(parsed).toMutableList()
         if (userArgs.firstOrNull()?.substringAfterLast('/')?.equals("rclone", ignoreCase = true) == true) {
             userArgs.removeAt(0)
         }
@@ -35,9 +35,6 @@ object RcloneEngine {
 
         require(userArgs.isNotEmpty()) { "rclone subcommand is missing" }
 
-        // Normalize user progress flags; the app adds one canonical --progress flag.
-        userArgs.removeAll { it == "--progress" || it == "-P" || it.startsWith("--progress=") }
-
         val args = mutableListOf<String>()
         args += binary(context).absolutePath
 
@@ -47,14 +44,10 @@ object RcloneEngine {
         if (!hasOption(userArgs, "--cache-dir")) {
             args += listOf("--cache-dir", ConfigManager.cacheDir.absolutePath)
         }
-        if (!hasOption(userArgs, "--use-json-log")) args += "--use-json-log"
-        if (!hasOption(userArgs, "--stats")) args += listOf("--stats", "1s")
-        if (!hasOption(userArgs, "--stats-log-level")) args += listOf("--stats-log-level", "NOTICE")
-        if (!hasOption(userArgs, "--stats-one-line")) args += "--stats-one-line"
+        args += TransferOutput.flags
         if (!hasOption(userArgs, "--log-level") && !hasVerboseFlag(userArgs)) {
             args += listOf("--log-level", "INFO")
         }
-        args += "--progress"
 
         val transfers = transfersOverride ?: AppSettings.defaultTransfers.value
         val checkers = checkersOverride ?: AppSettings.defaultCheckers.value
@@ -83,31 +76,37 @@ object RcloneEngine {
         }.toSet()
     }
 
-    fun runQuick(context: Context, argsAfterRclone: List<String>, timeoutSeconds: Long = 20): Result<String> = runCatching {
-        val args = mutableListOf<String>()
-        args += binary(context).absolutePath
-        args += listOf("--config", ConfigManager.configFile.absolutePath)
-        args += listOf("--cache-dir", ConfigManager.cacheDir.absolutePath)
-        args += argsAfterRclone
-
-        val process = ProcessBuilder(args)
-            .redirectErrorStream(true)
-            .start()
-        val output = StringBuilder()
-        val readerThread = kotlin.concurrent.thread(name = "rclone-quick-output") {
-            process.inputStream.bufferedReader().useLines { lines ->
-                lines.forEach { line -> output.appendLine(line) }
+    fun runQuick(
+        context: Context,
+        argsAfterRclone: List<String>,
+        timeoutSeconds: Long = 20,
+        onStarted: (Process) -> Unit = {}
+    ): Result<String> = runCatching {
+        val args = listOf(binary(context).absolutePath, "--config", ConfigManager.configFile.absolutePath,
+            "--cache-dir", ConfigManager.cacheDir.absolutePath) + argsAfterRclone
+        val process = ProcessBuilder(args).start()
+        val output = StringBuffer()
+        val errors = StringBuffer()
+        fun read(stream: java.io.InputStream, buffer: StringBuffer) = kotlin.concurrent.thread {
+            TransferStream.read(stream.bufferedReader(), { buffer.append(it).append('\n') }, {
+                errors.append("Log stream closed: ").append(it.message).append('\n')
+            })
+        }
+        val stdout = read(process.inputStream, output)
+        val stderr = read(process.errorStream, errors)
+        try {
+            onStarted(process)
+            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                runCatching { process.destroyForcibly() }
+                error("rclone timed out after ${timeoutSeconds}s")
             }
+            stdout.join(1500)
+            stderr.join(1500)
+            if (process.exitValue() != 0) error(errors.toString().trim().ifBlank { "rclone exit code: ${process.exitValue()}" })
+            output.toString().trim()
+        } finally {
+            if (process.isAlive) runCatching { process.destroyForcibly() }
         }
-        if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            readerThread.join(1000)
-            error("rclone timed out")
-        }
-        readerThread.join(1000)
-        val text = output.toString().trim()
-        if (process.exitValue() != 0) error(text.ifBlank { "rclone exit code: ${process.exitValue()}" })
-        text
     }
 
     fun version(context: Context): String = runQuick(context, listOf("version"), 10)

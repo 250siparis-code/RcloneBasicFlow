@@ -11,12 +11,19 @@ android {
         applicationId = "dev.galaxy.rclonecards"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "2.1.0"
+        versionCode = 8
+        versionName = "2.1.4"
+        manifestPlaceholders["appLabel"] = "Basic Rclone Flow"
+        manifestPlaceholders["oauthScheme"] = "basic-rclone-flow"
+        buildConfigField("String", "OAUTH_SCHEME", "\"basic-rclone-flow\"")
 
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
+    }
+
+    signingConfigs.getByName("debug") {
+        System.getenv("RCLONE_KEYSTORE_PATH")?.let { storeFile = file(it) }
     }
 
     buildTypes {
@@ -28,6 +35,15 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        create("driveTest") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".drivetest"
+            versionNameSuffix = "-drive-test"
+            matchingFallbacks += listOf("release")
+            manifestPlaceholders["appLabel"] = "Basic Rclone Flow"
+            manifestPlaceholders["oauthScheme"] = "basic-rclone-flow-test"
+            buildConfigField("String", "OAUTH_SCHEME", "\"basic-rclone-flow-test\"")
         }
     }
 
@@ -64,6 +80,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.2")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.animation:animation")

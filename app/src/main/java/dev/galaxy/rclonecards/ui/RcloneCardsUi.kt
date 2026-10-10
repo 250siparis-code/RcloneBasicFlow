@@ -99,6 +99,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -139,8 +142,6 @@ import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
 import dev.galaxy.rclonecards.data.JobHistoryStore
 import dev.galaxy.rclonecards.engine.RcloneConfigQuestion
-import dev.galaxy.rclonecards.engine.RcloneConfigStep
-import dev.galaxy.rclonecards.engine.RcloneConfigWizard
 import dev.galaxy.rclonecards.engine.RcloneEngine
 import dev.galaxy.rclonecards.model.CardColor
 import dev.galaxy.rclonecards.model.CardIcon
@@ -231,7 +232,23 @@ fun RcloneCardsRoot(
     val jobs by JobRepository.jobs.collectAsState()
     val external by externalNavigation.collectAsState()
 
-    var screen: Screen by remember { mutableStateOf(Screen.Home) }
+    val driveSetup: DriveSetupViewModel = viewModel()
+    var screen: Screen by rememberSaveable(stateSaver = Saver<Screen, String>(
+        save = { when (it) {
+            Screen.Home -> "home"
+            Screen.Settings -> "settings"
+            Screen.History -> "history"
+            is Screen.Edit -> "edit:${it.cardId}"
+            is Screen.Detail -> "detail:${it.cardId}"
+        } },
+        restore = { when {
+            it == "settings" -> Screen.Settings
+            it == "history" -> Screen.History
+            it.startsWith("edit:") -> Screen.Edit(it.substringAfter(":"))
+            it.startsWith("detail:") -> Screen.Detail(it.substringAfter(":"))
+            else -> Screen.Home
+        } }
+    )) { mutableStateOf(if (driveSetup.open.value) Screen.Settings else Screen.Home) }
     var menuCardId by remember { mutableStateOf<String?>(null) }
     var deleteCardId by remember { mutableStateOf<String?>(null) }
     var exitConfirm by remember { mutableStateOf(false) }
@@ -319,6 +336,7 @@ fun RcloneCardsRoot(
             )
 
             Screen.Settings -> SettingsScreen(
+                driveSetup = driveSetup,
                 onBack = { screen = Screen.Home },
                 onImportConfig = onImportConfig,
                 onExportConfig = onExportConfig,
@@ -375,8 +393,8 @@ fun RcloneCardsRoot(
         }
 
         if (exitConfirm) {
-            AlertDialog(onDismissRequest = { exitConfirm = false },
-                modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            AlertDialog(shape = RoundedCornerShape(24.dp), onDismissRequest = { exitConfirm = false },
+                modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
                 containerColor = Color.Black, tonalElevation = 0.dp,
                 title = { Text("Exit Basic Rclone Flow?") },
                 text = { Text("Active transfers continue in the background.", color = TextSecondary) },
@@ -385,8 +403,8 @@ fun RcloneCardsRoot(
         }
         val deleteCard = cards.firstOrNull { it.id == deleteCardId }
         if (deleteCard != null) {
-            AlertDialog(
-                modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            AlertDialog(shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
                 tonalElevation = 0.dp,
                 containerColor = Color.Black,
                 onDismissRequest = { deleteCardId = null },
@@ -499,7 +517,7 @@ private fun TaskCardItem(
     val completed=job?.status==JobStatus.COMPLETED
     val error=job?.status==JobStatus.ERROR
     Column(
-        Modifier.fillMaxWidth().height(146.dp).clip(RoundedCornerShape(24.dp)).background(Amoled)
+        Modifier.fillMaxWidth().heightIn(min = 184.dp).clip(RoundedCornerShape(24.dp)).background(Amoled)
             .border(if(active)1.5.dp else 1.dp,if(active)IconMuted.copy(alpha=.45f) else Outline,RoundedCornerShape(24.dp))
             .combinedClickable(onClick={},onDoubleClick=onDoubleClick,onLongClick=onLongPress).padding(14.dp)
     ){
@@ -534,7 +552,15 @@ private fun TaskCardItem(
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
+        if (job != null && (active || completed || error)) {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CardLiveMetric("Speed", formatSpeed(if (active) job.speedBytesPerSecond else 0.0), Modifier.weight(1f))
+                CardLiveMetric("ETA", if (completed) "—" else if (job.phase != null) "Verifying" else if (dev.galaxy.rclonecards.engine.TransferProgress.awaitingConfirmation(job)) "Finalizing" else formatEta(job.etaSeconds).removePrefix("ETA "), Modifier.weight(1f))
+                CardLiveMetric("Completed files", "${job.confirmedFiles ?: job.transfers}", Modifier.weight(1f))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(28.dp),contentAlignment=Alignment.CenterStart){
             when{
                 active && job!=null -> ModernProgressBar(job)
@@ -549,11 +575,26 @@ private fun TaskCardItem(
 }
 
 @Composable
+private fun CardLiveMetric(label: String, value: String, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = TextDim, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(3.dp))
+        Text(value, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
 private fun ModernProgressBar(job:JobState){
     val p=job.progressPercent.coerceIn(0,100)
-    Box(Modifier.fillMaxWidth().height(18.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF17191D))){
+    val known = job.totalBytes > 0 || job.totalTransfers > 0 || job.status == JobStatus.COMPLETED
+    val barHeight = with(LocalDensity.current) { 12.sp.toDp() + 8.dp }
+    Box(Modifier.fillMaxWidth().height(maxOf(24.dp, barHeight)).clip(RoundedCornerShape(12.dp)).background(Color(0xFF17191D))){
         Box(Modifier.fillMaxHeight().fillMaxWidth(p/100f).clip(RoundedCornerShape(9.dp)).background(IconMuted.copy(alpha=.42f)))
-        Text("$p%",Modifier.align(Alignment.CenterEnd).padding(end=8.dp),color=Color(0xFFE1E3E8),fontSize=10.5.sp,fontWeight=FontWeight.Bold)
+        Text(if (known) "$p%" else "—",Modifier.align(Alignment.CenterEnd).padding(horizontal=10.dp, vertical=4.dp),
+            color=TextPrimary,fontSize=11.sp,fontWeight=FontWeight.ExtraBold,
+            style=androidx.compose.ui.text.TextStyle(lineHeight=12.sp,
+                platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)))
     }
 }
 
@@ -815,7 +856,7 @@ private fun EditCardScreen(
 
             SectionLabel("Command")
             Text(
-                "Example: rclone copy /storage/emulated/0/Download gdrive:Backup. Optional: --exclude, --include, --dry-run, --bwlimit. --progress, --checkers and --transfers are added automatically (unless overridden).",
+                "Example: rclone copy /storage/emulated/0/Download gdrive:Backup. Optional: --exclude, --include, --dry-run, --bwlimit. Live statistics are managed by the app. --checkers and --transfers are added automatically (unless overridden).",
                 color = TextDim,
                 fontSize = 11.sp
             )
@@ -978,34 +1019,31 @@ private fun DetailScreen(
 ) {
     val accent = IconMuted
     val state = job ?: JobState(cardId = card?.id.orEmpty(), title = card?.title ?: "Task")
+    var logExpanded by rememberSaveable(card?.id) { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
 
     Column(Modifier.fillMaxSize().background(Amoled)) {
         TopBar(title = card?.let { "${it.title} · ${it.actionLabel}" } ?: "Task Details", onBack = onBack, action = {
             IconButton(onClick = onMenu) { Icon(Icons.Default.MoreVert, "Menu", tint = TextSecondary) }
         })
 
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(9.dp).clip(CircleShape).background(statusColor(state.status)))
                     Spacer(Modifier.width(8.dp))
-                    Text(statusText(state.status), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(state.phase ?: if (dev.galaxy.rclonecards.engine.TransferProgress.awaitingConfirmation(state)) "Waiting for Drive confirmation" else statusText(state.status), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Text("${state.progressPercent}%", color = IconMuted, fontWeight = FontWeight.Black, fontSize = 20.sp)
             }
             Spacer(Modifier.height(10.dp))
-            LinearProgressIndicator(
-                progress = state.progressPercent / 100f,
-                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                color = IconMuted,
-                trackColor = Color(0xFF29292E)
-            )
+            ModernProgressBar(state)
             Spacer(Modifier.height(18.dp))
 
-            StatRow(Icons.Default.Storage, if (state.totalBytes > 0) "${formatBytes(state.bytes)} / ${formatBytes(state.totalBytes)}" else formatBytes(state.bytes))
-            StatRow(Icons.Default.DoneAll, if (state.totalTransfers > 0) "${state.transfers} / ${state.totalTransfers} files" else "${state.transfers} files")
+            StatRow(Icons.Default.Storage, "Processed: " + if (state.totalBytes > 0) "${formatBytes(state.bytes)} / ${formatBytes(state.totalBytes)}" else formatBytes(state.bytes))
+            StatRow(Icons.Default.DoneAll, "Completed: ${state.confirmedFiles ?: state.transfers} files · ${state.confirmedBytes?.let { formatBytes(it) } ?: "size not confirmed"}")
+            if (state.activeTransfers > 0) StatRow(Icons.Default.Cloud, "${state.activeTransfers} files in progress")
             StatRow(Icons.Default.Refresh, formatSpeed(state.speedBytesPerSecond))
-            StatRow(Icons.Default.Schedule, formatEta(state.etaSeconds))
+            StatRow(Icons.Default.Schedule, state.phase ?: if (dev.galaxy.rclonecards.engine.TransferProgress.awaitingConfirmation(state)) "Data sent; completion is not confirmed yet" else formatEta(state.etaSeconds))
             StatRow(Icons.Default.Code, "Elapsed: ${formatDuration(state.elapsedSeconds.toLong())}")
             state.currentFile?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(4.dp))
@@ -1017,23 +1055,29 @@ private fun DetailScreen(
             }
 
             Spacer(Modifier.height(14.dp))
-            Text("LIVE LOG", color = TextDim, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF080809))
-                    .border(1.dp, Color(0xFF17171A), RoundedCornerShape(16.dp))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                items(state.logs) { line ->
-                    Text(line, color = logColor(line), fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { logExpanded = !logExpanded }, modifier = Modifier.weight(1f)) {
+                    Text(if (logExpanded) "Hide live log" else "Show live log", color = TextSecondary)
+                }
+                TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(state.logs.joinToString("\n"))) }) {
+                    Text("Copy log", color = TextPrimary)
                 }
             }
-
+            if (logExpanded) {
+                SelectionContainer {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                            .clip(RoundedCornerShape(16.dp)).background(Color(0xFF080809))
+                            .border(1.dp, Color(0xFF17171A), RoundedCornerShape(16.dp)).padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        items(state.logs) { line ->
+                            Text(line, color = logColor(line), fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
             Spacer(Modifier.height(12.dp))
             when (state.status) {
                 JobStatus.RUNNING -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1077,6 +1121,7 @@ private fun StatRow(icon: ImageVector, text: String) {
 
 @Composable
 private fun SettingsScreen(
+    driveSetup: DriveSetupViewModel,
     onBack: () -> Unit,
     onImportConfig: () -> Unit,
     onExportConfig: () -> Unit,
@@ -1127,12 +1172,12 @@ private fun SettingsScreen(
     var defaultsDialog by remember { mutableStateOf(false) }
     var clearDataDialog by remember { mutableStateOf(false) }
 
-    var driveSetupDialog by remember { mutableStateOf(false) }
-    var driveStep by remember { mutableStateOf<RcloneConfigStep?>(null) }
-    var driveAnswer by remember { mutableStateOf("") }
-    var driveBusy by remember { mutableStateOf(false) }
-    var driveWizardError by remember { mutableStateOf<String?>(null) }
-    var driveRemoteName by remember { mutableStateOf("gdrive") }
+    val driveSetupDialog by driveSetup.open
+    val driveStep by driveSetup.step
+    var driveAnswer by driveSetup.answer
+    val driveBusy by driveSetup.busy
+    var driveWizardError by driveSetup.error
+    var driveRemoteName by driveSetup.remoteName
 
     var termuxConfigDialog by remember { mutableStateOf(false) }
     var aboutDialog by remember { mutableStateOf(false) }
@@ -1145,7 +1190,7 @@ private fun SettingsScreen(
         if (uri != null) {
             runCatching {
                 val dir = File(context.filesDir, "rclone").apply { mkdirs() }
-                val dest = File(dir, "service-account.json")
+                val dest = File(dir, "service-account-${java.util.UUID.randomUUID()}.json")
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     dest.outputStream().use { output -> input.copyTo(output) }
                 } ?: error("Service Account JSON could not be read.")
@@ -1183,10 +1228,7 @@ private fun SettingsScreen(
                     "Google Drive Setup",
                     "Native rclone RC setup with OAuth and live connection verification",
                     onClick = {
-                        driveStep = null
-                        driveAnswer = ""
-                        driveWizardError = null
-                        driveSetupDialog = true
+                        driveSetup.show()
                     }
                 )
                 SettingsRow(
@@ -1239,7 +1281,7 @@ private fun SettingsScreen(
                 SettingsRow(
                     Icons.Default.Settings,
                     "Default Options",
-                    "--progress always on · --transfers=$defaultTransfers · --checkers=$defaultCheckers",
+                    "Live statistics every second · --transfers=$defaultTransfers · --checkers=$defaultCheckers",
                     onClick = {
                         defaultsTransfersText = defaultTransfers.toString()
                         defaultsCheckersText = defaultCheckers.toString()
@@ -1336,9 +1378,9 @@ private fun SettingsScreen(
         val clipboard = LocalClipboardManager.current
         val termuxCommand = "CFG=\"$(rclone config file | tail -n 1)\"\ncp \"\$CFG\" ~/storage/downloads/rclone.conf"
 
-        AlertDialog(
+        AlertDialog(shape = RoundedCornerShape(24.dp),
 
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
 
             tonalElevation = 0.dp,
 
@@ -1390,117 +1432,18 @@ private fun SettingsScreen(
     }
 
     if (driveSetupDialog) {
-        val activity = context as? Activity
         val question: RcloneConfigQuestion? = driveStep?.question
         val setupCompleted = driveStep?.done == true
+        val setupVerified = driveStep?.verified == true
 
-        fun applyStep(step: RcloneConfigStep) {
-            driveStep = step
-            if (step.done && step.verified) {
-                val host = activity
-                if (host != null) {
-                    settingsScope.launch { RcloneConfigWizard.finish(host) }
-                }
-                driveSetupDialog = false
-                driveStep = null
-                driveAnswer = ""
-                driveWizardError = null
-                toast(context, "${driveRemoteName.ifBlank { "gdrive" }} connected and verified")
-            } else if (step.done) {
-                driveAnswer = ""
-                driveWizardError = step.verificationMessage
-            } else {
-                driveAnswer = step.question?.defaultValue.orEmpty()
-                driveWizardError = step.question?.error?.takeIf { it.isNotBlank() }
-            }
-        }
+        AlertDialog(shape = RoundedCornerShape(24.dp),
 
-        fun startSetup() {
-            val host = activity
-            if (host == null) {
-                driveWizardError = "Unable to access the Android activity."
-                return
-            }
-            driveBusy = true
-            driveWizardError = null
-            settingsScope.launch {
-                RcloneConfigWizard.startDrive(
-                    activity = host,
-                    remoteName = driveRemoteName
-                ).onSuccess(::applyStep)
-                    .onFailure { error ->
-                        driveWizardError = error.message ?: error.toString()
-                    }
-                driveBusy = false
-            }
-        }
-
-        fun continueSetup() {
-            val host = activity
-            val q = question
-            if (host == null || q == null) return
-
-            // Empty values are valid for optional rclone OAuth fields.
-            // Forward the answer to rclone and let its state machine validate it.
-            val answer = driveAnswer.takeIf { it.isNotBlank() } ?: q.defaultValue
-
-            driveBusy = true
-            driveWizardError = null
-            settingsScope.launch {
-                RcloneConfigWizard.answerDrive(
-                    activity = host,
-                    remoteName = driveRemoteName,
-                    state = q.state,
-                    result = answer
-                ).onSuccess(::applyStep)
-                    .onFailure { error ->
-                        driveWizardError = error.message ?: error.toString()
-                    }
-                driveBusy = false
-            }
-        }
-
-        fun retryVerification() {
-            val host = activity ?: return
-            driveBusy = true
-            driveWizardError = null
-            settingsScope.launch {
-                RcloneConfigWizard.verifyDrive(
-                    activity = host,
-                    remoteName = driveRemoteName
-                ).onSuccess(::applyStep)
-                    .onFailure { error ->
-                        driveWizardError = error.message ?: error.toString()
-                    }
-                driveBusy = false
-            }
-        }
-
-        fun closeSetup() {
-            val host = activity
-            if (host != null) {
-                settingsScope.launch {
-                    if (setupCompleted) {
-                        RcloneConfigWizard.finish(host)
-                    } else {
-                        RcloneConfigWizard.cancel(host)
-                    }
-                }
-            }
-            driveSetupDialog = false
-            driveStep = null
-            driveAnswer = ""
-            driveWizardError = null
-        }
-
-        AlertDialog(
-
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
 
             tonalElevation = 0.dp,
 
             containerColor = Color.Black,
-            onDismissRequest = { if (!driveBusy) closeSetup() },
+            onDismissRequest = { if (!driveBusy) driveSetup.close() },
             title = {
                 Text(
                     when {
@@ -1547,7 +1490,8 @@ private fun SettingsScreen(
                         }
                     } else if (setupCompleted) {
                         Text(
-                            "rclone.conf was created, but Basic Rclone Flow does not mark the setup as verified until a real Drive root listing succeeds.",
+                            if (setupVerified) "Google Drive connected and verified by a live root listing. You can close this window."
+                            else "Configuration was saved, but the live Drive test failed. Test again or review the connection in Manage Google Drive.",
                             color = TextSecondary,
                             fontSize = 11.5.sp,
                             lineHeight = 16.sp
@@ -1687,14 +1631,16 @@ private fun SettingsScreen(
                     enabled = !driveBusy,
                     onClick = {
                         when {
-                            setupCompleted -> retryVerification()
-                            question == null -> startSetup()
-                            else -> continueSetup()
+                            setupVerified -> driveSetup.close()
+                            setupCompleted -> driveSetup.verify()
+                            question == null -> driveSetup.start()
+                            else -> driveSetup.next()
                         }
                     }
                 ) {
                     Text(
                         when {
+                            setupVerified -> "Done"
                             setupCompleted -> "Test Again"
                             question == null -> "Start Setup"
                             else -> "Continue"
@@ -1706,15 +1652,15 @@ private fun SettingsScreen(
             dismissButton = {
                 TextButton(
                     enabled = !driveBusy,
-                    onClick = { closeSetup() }
+                    onClick = { driveSetup.close() }
                 ) { Text("Close") }
             }
         )
     }
 
     if (remotesDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { if (remoteBusyName == null) remotesDialog = false },
@@ -1835,8 +1781,8 @@ private fun SettingsScreen(
     }
 
     remoteEditName?.let { remote ->
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { remoteEditName = null },
@@ -1881,8 +1827,8 @@ private fun SettingsScreen(
     }
 
     deleteRemoteName?.let { remote ->
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { deleteRemoteName = null },
@@ -1915,8 +1861,8 @@ private fun SettingsScreen(
     }
 
     if (aboutDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { aboutDialog = false },
@@ -1952,8 +1898,8 @@ private fun SettingsScreen(
     }
 
     if (defaultsDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { defaultsDialog = false },
@@ -2000,8 +1946,8 @@ private fun SettingsScreen(
     }
 
     if (clearCardsDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { clearCardsDialog = false },
@@ -2029,8 +1975,8 @@ private fun SettingsScreen(
     }
 
     if (clearDataDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { clearDataDialog = false },
@@ -2249,7 +2195,7 @@ private fun formatBytes(bytes: Long): String {
     return if (v >= 100 || i == 0) "%.0f %s".format(Locale.US, v, units[i]) else "%.1f %s".format(Locale.US, v, units[i])
 }
 
-private fun formatSpeed(speed: Double): String = if (speed <= 0.0) "0 B/s" else "${formatBytes(speed.toLong())}/s"
+private fun formatSpeed(speed: Double): String = dev.galaxy.rclonecards.engine.TransferProgress.formatSpeed(speed)
 
 private fun formatEta(seconds: Long?): String {
     if (seconds == null || seconds < 0 || seconds > 365L * 86400L) return "ETA —"
