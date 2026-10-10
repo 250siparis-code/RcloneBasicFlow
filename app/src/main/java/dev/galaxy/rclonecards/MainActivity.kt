@@ -122,7 +122,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handleIntent(intent)
+        refreshPinnedShortcuts()
+        if (savedInstanceState == null) handleIntent(intent)
 
         setContent {
             RcloneCardsTheme {
@@ -160,10 +161,10 @@ class MainActivity : ComponentActivity() {
         }
 
         val runId = intent?.getStringExtra(EXTRA_RUN_CARD_ID)
+            ?: deepLink?.takeIf { it.scheme == BuildConfig.OAUTH_SCHEME && it.host == "run" }?.lastPathSegment
         if (!runId.isNullOrBlank()) {
             startRclone(runId)
             externalNavigation.value = "detail:$runId"
-            intent.removeExtra(EXTRA_RUN_CARD_ID)
             return
         }
         val detailId = intent?.getStringExtra(EXTRA_OPEN_DETAIL_CARD_ID)
@@ -220,17 +221,32 @@ class MainActivity : ComponentActivity() {
         val shortcutManager = getSystemService(ShortcutManager::class.java)
         if (!shortcutManager.isRequestPinShortcutSupported) return
 
-        val launch = Intent(this, MainActivity::class.java).apply {
-            action = Intent.ACTION_VIEW
-            putExtra(EXTRA_RUN_CARD_ID, card.id)
-        }
         val shortcut = ShortcutInfo.Builder(this, "rclone-${card.id}")
             .setShortLabel(card.title.take(20))
             .setLongLabel("${card.title} · ${card.actionLabel}".take(60))
             .setIcon(ShortcutIconFactory.create(card))
-            .setIntent(launch)
+            .setIntent(shortcutIntent(card.id))
             .build()
 
         shortcutManager.requestPinShortcut(shortcut, null)
+    }
+
+    private fun shortcutIntent(cardId: String) = Intent(this, MainActivity::class.java).apply {
+        action = Intent.ACTION_VIEW
+        data = Uri.Builder().scheme(BuildConfig.OAUTH_SCHEME).authority("run").appendPath(cardId).build()
+        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        putExtra(EXTRA_RUN_CARD_ID, cardId)
+    }
+
+    private fun refreshPinnedShortcuts() {
+        runCatching {
+            val manager = getSystemService(ShortcutManager::class.java)
+            val updates = manager.pinnedShortcuts.mapNotNull { shortcut ->
+                val card = CardStore.get(shortcut.id.removePrefix("rclone-")) ?: return@mapNotNull null
+                ShortcutInfo.Builder(this, shortcut.id).setShortLabel(card.title.take(20))
+                    .setIntent(shortcutIntent(card.id)).build()
+            }
+            if (updates.isNotEmpty()) manager.updateShortcuts(updates)
+        }
     }
 }

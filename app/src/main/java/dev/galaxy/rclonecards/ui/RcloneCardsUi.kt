@@ -393,8 +393,8 @@ fun RcloneCardsRoot(
         }
 
         if (exitConfirm) {
-            AlertDialog(onDismissRequest = { exitConfirm = false },
-                modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            AlertDialog(shape = RoundedCornerShape(24.dp), onDismissRequest = { exitConfirm = false },
+                modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
                 containerColor = Color.Black, tonalElevation = 0.dp,
                 title = { Text("Exit Basic Rclone Flow?") },
                 text = { Text("Active transfers continue in the background.", color = TextSecondary) },
@@ -403,8 +403,8 @@ fun RcloneCardsRoot(
         }
         val deleteCard = cards.firstOrNull { it.id == deleteCardId }
         if (deleteCard != null) {
-            AlertDialog(
-                modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            AlertDialog(shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
                 tonalElevation = 0.dp,
                 containerColor = Color.Black,
                 onDismissRequest = { deleteCardId = null },
@@ -569,9 +569,14 @@ private fun TaskCardItem(
 @Composable
 private fun ModernProgressBar(job:JobState){
     val p=job.progressPercent.coerceIn(0,100)
-    Box(Modifier.fillMaxWidth().height(18.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF17191D))){
+    val known = job.totalBytes > 0 || job.totalTransfers > 0 || job.status == JobStatus.COMPLETED
+    val barHeight = with(LocalDensity.current) { 12.sp.toDp() + 8.dp }
+    Box(Modifier.fillMaxWidth().height(maxOf(24.dp, barHeight)).clip(RoundedCornerShape(12.dp)).background(Color(0xFF17191D))){
         Box(Modifier.fillMaxHeight().fillMaxWidth(p/100f).clip(RoundedCornerShape(9.dp)).background(IconMuted.copy(alpha=.42f)))
-        Text("$p%",Modifier.align(Alignment.CenterEnd).padding(end=8.dp),color=Color(0xFFE1E3E8),fontSize=10.5.sp,fontWeight=FontWeight.Bold)
+        Text(if (known) "$p%" else "—",Modifier.align(Alignment.CenterEnd).padding(horizontal=10.dp, vertical=4.dp),
+            color=Color(0xFFE1E3E8),fontSize=11.sp,fontWeight=FontWeight.ExtraBold,
+            style=androidx.compose.ui.text.TextStyle(lineHeight=12.sp,
+                platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)))
     }
 }
 
@@ -833,7 +838,7 @@ private fun EditCardScreen(
 
             SectionLabel("Command")
             Text(
-                "Example: rclone copy /storage/emulated/0/Download gdrive:Backup. Optional: --exclude, --include, --dry-run, --bwlimit. --progress, --checkers and --transfers are added automatically (unless overridden).",
+                "Example: rclone copy /storage/emulated/0/Download gdrive:Backup. Optional: --exclude, --include, --dry-run, --bwlimit. Live statistics are managed by the app. --checkers and --transfers are added automatically (unless overridden).",
                 color = TextDim,
                 fontSize = 11.sp
             )
@@ -1009,15 +1014,9 @@ private fun DetailScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(statusText(state.status), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Text("${state.progressPercent}%", color = IconMuted, fontWeight = FontWeight.Black, fontSize = 20.sp)
             }
             Spacer(Modifier.height(10.dp))
-            LinearProgressIndicator(
-                progress = state.progressPercent / 100f,
-                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                color = IconMuted,
-                trackColor = Color(0xFF29292E)
-            )
+            ModernProgressBar(state)
             Spacer(Modifier.height(18.dp))
 
             StatRow(Icons.Default.Storage, if (state.totalBytes > 0) "${formatBytes(state.bytes)} / ${formatBytes(state.totalBytes)}" else formatBytes(state.bytes))
@@ -1255,7 +1254,7 @@ private fun SettingsScreen(
                 SettingsRow(
                     Icons.Default.Settings,
                     "Default Options",
-                    "--progress always on · --transfers=$defaultTransfers · --checkers=$defaultCheckers",
+                    "Live statistics every second · --transfers=$defaultTransfers · --checkers=$defaultCheckers",
                     onClick = {
                         defaultsTransfersText = defaultTransfers.toString()
                         defaultsCheckersText = defaultCheckers.toString()
@@ -1352,9 +1351,9 @@ private fun SettingsScreen(
         val clipboard = LocalClipboardManager.current
         val termuxCommand = "CFG=\"$(rclone config file | tail -n 1)\"\ncp \"\$CFG\" ~/storage/downloads/rclone.conf"
 
-        AlertDialog(
+        AlertDialog(shape = RoundedCornerShape(24.dp),
 
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
 
             tonalElevation = 0.dp,
 
@@ -1410,7 +1409,7 @@ private fun SettingsScreen(
         val setupCompleted = driveStep?.done == true
         val setupVerified = driveStep?.verified == true
 
-        AlertDialog(
+        AlertDialog(shape = RoundedCornerShape(24.dp),
 
             modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
 
@@ -1633,8 +1632,8 @@ private fun SettingsScreen(
     }
 
     if (remotesDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { if (remoteBusyName == null) remotesDialog = false },
@@ -1755,8 +1754,8 @@ private fun SettingsScreen(
     }
 
     remoteEditName?.let { remote ->
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { remoteEditName = null },
@@ -1801,8 +1800,8 @@ private fun SettingsScreen(
     }
 
     deleteRemoteName?.let { remote ->
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { deleteRemoteName = null },
@@ -1835,8 +1834,8 @@ private fun SettingsScreen(
     }
 
     if (aboutDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { aboutDialog = false },
@@ -1872,8 +1871,8 @@ private fun SettingsScreen(
     }
 
     if (defaultsDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { defaultsDialog = false },
@@ -1920,8 +1919,8 @@ private fun SettingsScreen(
     }
 
     if (clearCardsDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { clearCardsDialog = false },
@@ -1949,8 +1948,8 @@ private fun SettingsScreen(
     }
 
     if (clearDataDialog) {
-        AlertDialog(
-            modifier = Modifier.fillMaxWidth(.94f).offset(y = 70.dp).border(1.dp, Outline, RoundedCornerShape(24.dp)),
+        AlertDialog(shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(.94f).border(1.dp, Outline, RoundedCornerShape(24.dp)),
             tonalElevation = 0.dp,
             containerColor = Color.Black,
             onDismissRequest = { clearDataDialog = false },
@@ -2169,7 +2168,7 @@ private fun formatBytes(bytes: Long): String {
     return if (v >= 100 || i == 0) "%.0f %s".format(Locale.US, v, units[i]) else "%.1f %s".format(Locale.US, v, units[i])
 }
 
-private fun formatSpeed(speed: Double): String = if (speed <= 0.0) "0 B/s" else "${formatBytes(speed.toLong())}/s"
+private fun formatSpeed(speed: Double): String = dev.galaxy.rclonecards.engine.TransferProgress.formatSpeed(speed)
 
 private fun formatEta(seconds: Long?): String {
     if (seconds == null || seconds < 0 || seconds > 365L * 86400L) return "ETA —"

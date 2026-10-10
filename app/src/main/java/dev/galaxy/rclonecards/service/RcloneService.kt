@@ -20,6 +20,7 @@ import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
 import dev.galaxy.rclonecards.data.JobHistoryStore
 import dev.galaxy.rclonecards.engine.RcloneEngine
+import dev.galaxy.rclonecards.engine.TransferProgress
 import dev.galaxy.rclonecards.model.JobState
 import dev.galaxy.rclonecards.model.JobStatus
 import org.json.JSONObject
@@ -46,6 +47,7 @@ class RcloneService : Service() {
     }
 
     private val processes = ConcurrentHashMap<String, Process>()
+    private val startingJobs = ConcurrentHashMap.newKeySet<String>()
     private val processIds = ConcurrentHashMap<String, Int>()
     private val queue = ArrayDeque<String>()
     private val queueLock = Any()
@@ -78,7 +80,7 @@ class RcloneService : Service() {
     }
 
     private fun startJob(cardId: String) {
-        if (processes.containsKey(cardId)) return
+        if (processes.containsKey(cardId) || startingJobs.contains(cardId)) return
         val card = CardStore.get(cardId) ?: return
         if (!RcloneEngine.isBinaryAvailable(this)) {
             JobRepository.put(
@@ -120,6 +122,7 @@ class RcloneService : Service() {
             return
         }
 
+        if (!startingJobs.add(cardId)) return
         acquireWakeLock()
         JobRepository.put(
             JobState(
@@ -157,6 +160,7 @@ class RcloneService : Service() {
 
                 val process = builder.start()
                 processes[cardId] = process
+                if (JobRepository.get(cardId)?.status == JobStatus.STOPPED) process.destroyForcibly()
 
                 var childPid: Int? = null
                 for (attempt in 0 until 40) {
@@ -228,6 +232,7 @@ class RcloneService : Service() {
                     )
                 }
             } finally {
+                startingJobs.remove(cardId)
                 recordHistory(cardId)
                 postResultNotification(cardId)
                 updateForeground()
@@ -274,36 +279,7 @@ class RcloneService : Service() {
             if (obj.optJSONObject("stats") == null) parseProgressText(cardId, msg)
             val stats = obj.optJSONObject("stats")
             if (stats != null) {
-                val bytes = stats.optLong("bytes", 0L)
-                val totalBytes = stats.optLong("totalBytes", 0L)
-                val transfers = stats.optLong("transfers", 0L)
-                val totalTransfers = stats.optLong("totalTransfers", 0L)
-                val speed = stats.optDouble("speed", 0.0)
-                val eta = if (stats.isNull("eta")) null else stats.optLong("eta")
-                val elapsed = stats.optDouble("elapsedTime", 0.0)
-                val errors = stats.optInt("errors", 0)
-                val current = stats.optJSONArray("transferring")?.let { arr ->
-                    if (arr.length() > 0) arr.optJSONObject(0)?.optString("name") else null
-                }
-                val percent = when {
-                    totalBytes > 0 -> ((bytes.toDouble() / totalBytes.toDouble()) * 100.0).roundToInt().coerceIn(0, 100)
-                    totalTransfers > 0 -> ((transfers.toDouble() / totalTransfers.toDouble()) * 100.0).roundToInt().coerceIn(0, 100)
-                    else -> JobRepository.get(cardId)?.progressPercent ?: 0
-                }
-                JobRepository.update(cardId) {
-                    it.copy(
-                        progressPercent = maxOf(it.progressPercent, if (it.status == JobStatus.RUNNING || it.status == JobStatus.PAUSED) percent.coerceAtMost(99) else percent),
-                        bytes = bytes,
-                        totalBytes = totalBytes,
-                        transfers = transfers,
-                        totalTransfers = totalTransfers,
-                        speedBytesPerSecond = speed,
-                        etaSeconds = eta,
-                        elapsedSeconds = elapsed,
-                        currentFile = current,
-                        errors = errors
-                    )
-                }
+                JobRepository.update(cardId) { TransferProgress.fromStats(it, stats) }
             }
 
             if (level.equals("error", true)) {
@@ -418,6 +394,7 @@ class RcloneService : Service() {
     }
 
     private fun enqueue(cardId: String) {
+        if (processes.containsKey(cardId) || startingJobs.contains(cardId)) return
         val card = CardStore.get(cardId) ?: return
         synchronized(queueLock) {
             if (!queue.contains(cardId) && !processes.containsKey(cardId)) queue.addLast(cardId)
@@ -428,7 +405,7 @@ class RcloneService : Service() {
     }
 
     private fun pumpQueue() {
-        if (processes.isNotEmpty()) return
+        if (processes.isNotEmpty() || startingJobs.isNotEmpty()) return
         val next = synchronized(queueLock) { if (queue.isEmpty()) null else queue.removeFirst() }
         if (next != null) startJob(next)
     }
@@ -452,9 +429,11 @@ class RcloneService : Service() {
             it.status == JobStatus.RUNNING || it.status == JobStatus.PAUSED || it.status == JobStatus.QUEUED
         }
         val title = active?.title ?: "Basic Rclone Flow"
+        val knownProgress = active != null && (active.totalBytes > 0L || active.totalTransfers > 0L)
         val statusText = when (active?.status) {
-            JobStatus.RUNNING -> "Running · %${active.progressPercent} · ${formatSpeed(active.speedBytesPerSecond)}"
-            JobStatus.PAUSED -> "Paused · %${active.progressPercent}"
+            JobStatus.RUNNING -> if (knownProgress) "Running · ${active.progressPercent}% · ${formatSpeed(active.speedBytesPerSecond)}"
+                else "Preparing · ${formatSpeed(active.speedBytesPerSecond)}"
+            JobStatus.PAUSED -> if (knownProgress) "Paused · ${active.progressPercent}%" else "Paused"
             JobStatus.QUEUED -> "Queued"
             else -> "No active transfer"
         }
@@ -480,7 +459,7 @@ class RcloneService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
 
         if (active != null && active.status != JobStatus.QUEUED) {
-            builder.setProgress(100, active.progressPercent, active.totalBytes <= 0L && active.totalTransfers <= 0L)
+            builder.setProgress(100, active.progressPercent, !knownProgress && active.status == JobStatus.RUNNING)
             val stopIntent = Intent(this, RcloneService::class.java).apply {
                 action = ACTION_STOP
                 putExtra(EXTRA_CARD_ID, active.cardId)
@@ -553,7 +532,7 @@ class RcloneService : Service() {
             it.status == JobStatus.RUNNING || it.status == JobStatus.PAUSED || it.status == JobStatus.QUEUED
         }
         val hasQueued = synchronized(queueLock) { queue.isNotEmpty() }
-        if (!anyActive && !hasQueued && processes.isEmpty()) {
+        if (!anyActive && !hasQueued && processes.isEmpty() && startingJobs.isEmpty()) {
             releaseWakeLock()
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -592,17 +571,7 @@ class RcloneService : Service() {
         }
     }
 
-    private fun formatSpeed(bytesPerSecond: Double): String {
-        if (bytesPerSecond <= 0.0) return "0 B/s"
-        val units = arrayOf("B/s", "KB/s", "MB/s", "GB/s")
-        var value = bytesPerSecond
-        var i = 0
-        while (value >= 1024.0 && i < units.lastIndex) {
-            value /= 1024.0
-            i++
-        }
-        return if (value >= 100 || i == 0) "%.0f %s".format(value, units[i]) else "%.1f %s".format(value, units[i])
-    }
+    private fun formatSpeed(bytesPerSecond: Double) = TransferProgress.formatSpeed(bytesPerSecond)
 
     override fun onDestroy() {
         processes.values.forEach { runCatching { it.destroyForcibly() } }

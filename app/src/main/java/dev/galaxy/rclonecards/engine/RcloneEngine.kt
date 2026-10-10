@@ -24,7 +24,7 @@ object RcloneEngine {
         val parsed = ShellWords.parse(rawCommand.trim())
         require(parsed.isNotEmpty()) { "Command is empty" }
 
-        val userArgs = parsed.toMutableList()
+        val userArgs = TransferOutput.normalize(parsed).toMutableList()
         if (userArgs.firstOrNull()?.substringAfterLast('/')?.equals("rclone", ignoreCase = true) == true) {
             userArgs.removeAt(0)
         }
@@ -35,9 +35,6 @@ object RcloneEngine {
 
         require(userArgs.isNotEmpty()) { "rclone subcommand is missing" }
 
-        // Normalize user progress flags; the app adds one canonical --progress flag.
-        userArgs.removeAll { it == "--progress" || it == "-P" || it.startsWith("--progress=") }
-
         val args = mutableListOf<String>()
         args += binary(context).absolutePath
 
@@ -47,14 +44,10 @@ object RcloneEngine {
         if (!hasOption(userArgs, "--cache-dir")) {
             args += listOf("--cache-dir", ConfigManager.cacheDir.absolutePath)
         }
-        if (!hasOption(userArgs, "--use-json-log")) args += "--use-json-log"
-        if (!hasOption(userArgs, "--stats")) args += listOf("--stats", "1s")
-        if (!hasOption(userArgs, "--stats-log-level")) args += listOf("--stats-log-level", "NOTICE")
-        if (!hasOption(userArgs, "--stats-one-line")) args += "--stats-one-line"
+        args += TransferOutput.flags
         if (!hasOption(userArgs, "--log-level") && !hasVerboseFlag(userArgs)) {
             args += listOf("--log-level", "INFO")
         }
-        args += "--progress"
 
         val transfers = transfersOverride ?: AppSettings.defaultTransfers.value
         val checkers = checkersOverride ?: AppSettings.defaultCheckers.value

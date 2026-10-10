@@ -72,6 +72,7 @@ jobs:
           curl --fail --location https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-linux-amd64.zip -o /tmp/rclone-test.zip
           unzip -q /tmp/rclone-test.zip -d /tmp/rclone-test
           python3 scripts/test-drive-protocol.py /tmp/rclone-test/rclone-v1.75.1-linux-amd64/rclone
+          python3 scripts/test-transfer-progress.py /tmp/rclone-test/rclone-v1.75.1-linux-amd64/rclone
 
       - name: Build minified APK
         run: gradle --no-daemon :app:assembleRelease :app:assembleDriveTest
@@ -82,13 +83,13 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Basic-Rclone-Flow-v2.1.1-arm64
+          name: Basic-Rclone-Flow-v2.1.2-arm64
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
       - name: Upload isolated Drive test APK
         uses: actions/upload-artifact@v4
         with:
-          name: Basic-Rclone-Flow-v2.1.1-Drive-Test-arm64
+          name: Basic-Rclone-Flow-v2.1.2-Drive-Test-arm64
           path: app/build/outputs/apk/driveTest/app-driveTest.apk
           if-no-files-found: error
