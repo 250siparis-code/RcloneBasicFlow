@@ -36,6 +36,7 @@ data class JobState(
     val confirmedBytes: Long? = null,
     val confirmedFiles: Long? = null,
     val activeTransfers: Int = 0,
+    val phase: String? = null,
     val speedBytesPerSecond: Double = 0.0,
     val etaSeconds: Long? = null,
     val elapsedSeconds: Double = 0.0,

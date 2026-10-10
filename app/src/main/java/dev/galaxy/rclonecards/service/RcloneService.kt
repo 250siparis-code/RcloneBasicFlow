@@ -20,6 +20,7 @@ import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
 import dev.galaxy.rclonecards.data.JobHistoryStore
 import dev.galaxy.rclonecards.engine.RcloneEngine
+import dev.galaxy.rclonecards.engine.TransferVerification
 import dev.galaxy.rclonecards.engine.TransferProcess
 import dev.galaxy.rclonecards.engine.TransferStream
 import dev.galaxy.rclonecards.engine.TransferProgress
@@ -197,10 +198,15 @@ class RcloneService : Service() {
                 if (previous?.status == JobStatus.STOPPED) {
                     JobRepository.update(cardId) { it.copy(exitCode = exit, finishedAtMillis = it.finishedAtMillis ?: System.currentTimeMillis()) }
                 } else if (exit == 0) {
+                    verifyDestination(cardId, card.command)
                     JobRepository.update(cardId) {
                         it.copy(
-                            status = JobStatus.COMPLETED,
-                            progressPercent = 100,
+                            status = if (it.status == JobStatus.STOPPED) JobStatus.STOPPED else JobStatus.COMPLETED,
+                            progressPercent = if (it.status == JobStatus.STOPPED) it.progressPercent else 100,
+                            phase = null,
+                            activeTransfers = 0,
+                            speedBytesPerSecond = 0.0,
+                            etaSeconds = null,
                             exitCode = exit,
                             finishedAtMillis = System.currentTimeMillis()
                         )
@@ -237,6 +243,9 @@ class RcloneService : Service() {
                     )
                 }
             } finally {
+                processes.remove(cardId)
+                processIds.remove(cardId)
+                JobRepository.update(cardId) { it.copy(phase = null, activeTransfers = 0, speedBytesPerSecond = 0.0, etaSeconds = null) }
                 startingJobs.remove(cardId)
                 completions.remove(cardId)
                 recordHistory(cardId)
@@ -245,6 +254,35 @@ class RcloneService : Service() {
                 pumpQueue()
                 maybeStopSelf()
             }
+        }
+    }
+
+    private fun verifyDestination(cardId: String, command: String) {
+        val destination = TransferVerification.destination(command) ?: return
+        if (!ConfigManager.remoteType(destination.substringBefore(':')).equals("drive", true)) return
+        val expected = completions[cardId]?.snapshot().orEmpty()
+        if (expected.isEmpty() || JobRepository.get(cardId)?.status == JobStatus.STOPPED) return
+        if (expected.keys.any { '\n' in it || '\r' in it }) {
+            error("Destination verification cannot represent a filename containing a newline")
+        }
+        val filter = java.io.File.createTempFile("verify-", ".txt", cacheDir)
+        try {
+            filter.writeText(expected.keys.joinToString("\n", postfix = "\n"))
+            JobRepository.update(cardId) { it.copy(phase = "Verifying destination", speedBytesPerSecond = 0.0, etaSeconds = null) }
+            JobRepository.appendLog(cardId, "VERIFY  Checking ${expected.size} completed files at $destination")
+            updateForeground()
+            val output = RcloneEngine.runQuick(this,
+                listOf("lsjson", destination, "--recursive", "--files-only", "--no-mimetype",
+                    "--files-from-raw", filter.absolutePath), 60) { process ->
+                processes[cardId] = process
+                if (JobRepository.get(cardId)?.status == JobStatus.STOPPED) runCatching { process.destroyForcibly() }
+            }.getOrThrow()
+            if (JobRepository.get(cardId)?.status == JobStatus.STOPPED) return
+            TransferVerification.validate(expected, org.json.JSONArray(output))?.let { error(it) }
+            JobRepository.appendLog(cardId, "VERIFY  Confirmed ${expected.size} destination files and sizes")
+        } finally {
+            processes.remove(cardId)
+            filter.delete()
         }
     }
 
@@ -421,7 +459,9 @@ class RcloneService : Service() {
         val title = active?.title ?: "Basic Rclone Flow"
         val knownProgress = active != null && (active.totalBytes > 0L || active.totalTransfers > 0L)
         val statusText = when (active?.status) {
-            JobStatus.RUNNING -> if (knownProgress) "Running · ${active.progressPercent}% · ${formatSpeed(active.speedBytesPerSecond)}"
+            JobStatus.RUNNING -> if (active.phase != null) active.phase
+                else if (TransferProgress.awaitingConfirmation(active)) "Waiting for Drive confirmation · 99%"
+                else if (knownProgress) "Running · ${active.progressPercent}% · ${formatSpeed(active.speedBytesPerSecond)}"
                 else "Preparing · ${formatSpeed(active.speedBytesPerSecond)}"
             JobStatus.PAUSED -> if (knownProgress) "Paused · ${active.progressPercent}%" else "Paused"
             JobStatus.QUEUED -> "Queued"

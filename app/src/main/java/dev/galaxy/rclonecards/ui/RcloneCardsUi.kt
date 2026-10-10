@@ -556,7 +556,7 @@ private fun TaskCardItem(
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CardLiveMetric("Speed", formatSpeed(if (active) job.speedBytesPerSecond else 0.0), Modifier.weight(1f))
-                CardLiveMetric("ETA", if (completed) "—" else formatEta(job.etaSeconds).removePrefix("ETA "), Modifier.weight(1f))
+                CardLiveMetric("ETA", if (completed) "—" else if (job.phase != null) "Verifying" else if (dev.galaxy.rclonecards.engine.TransferProgress.awaitingConfirmation(job)) "Finalizing" else formatEta(job.etaSeconds).removePrefix("ETA "), Modifier.weight(1f))
                 CardLiveMetric("Completed files", "${job.confirmedFiles ?: job.transfers}", Modifier.weight(1f))
             }
         }
@@ -1032,7 +1032,7 @@ private fun DetailScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(9.dp).clip(CircleShape).background(statusColor(state.status)))
                     Spacer(Modifier.width(8.dp))
-                    Text(statusText(state.status), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(state.phase ?: if (dev.galaxy.rclonecards.engine.TransferProgress.awaitingConfirmation(state)) "Waiting for Drive confirmation" else statusText(state.status), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -1043,7 +1043,7 @@ private fun DetailScreen(
             StatRow(Icons.Default.DoneAll, "Completed: ${state.confirmedFiles ?: state.transfers} files · ${state.confirmedBytes?.let { formatBytes(it) } ?: "size not confirmed"}")
             if (state.activeTransfers > 0) StatRow(Icons.Default.Cloud, "${state.activeTransfers} files in progress")
             StatRow(Icons.Default.Refresh, formatSpeed(state.speedBytesPerSecond))
-            StatRow(Icons.Default.Schedule, formatEta(state.etaSeconds))
+            StatRow(Icons.Default.Schedule, state.phase ?: if (dev.galaxy.rclonecards.engine.TransferProgress.awaitingConfirmation(state)) "Data sent; completion is not confirmed yet" else formatEta(state.etaSeconds))
             StatRow(Icons.Default.Code, "Elapsed: ${formatDuration(state.elapsedSeconds.toLong())}")
             state.currentFile?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(4.dp))

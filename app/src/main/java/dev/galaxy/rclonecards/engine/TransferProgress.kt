@@ -8,6 +8,9 @@ import kotlin.math.roundToInt
 
 /** Global transfer statistics, never an individual file's percentage. */
 object TransferProgress {
+    fun awaitingConfirmation(state: JobState) = state.status == JobStatus.RUNNING &&
+        state.totalBytes > 0 && state.bytes >= state.totalBytes && state.activeTransfers > 0
+
     /** Older engines can wrap a multiline stats report in a JSON message without stats. */
     fun fromText(state: JobState, message: String): JobState {
         val report = message.replace(Regex("\u001b\\[[;\\d]*[ -/]*[@-~]"), "").replace('\r', ' ')
@@ -76,6 +79,8 @@ object TransferProgress {
 /** Counts unique successful file events, never partial reads or failed attempts. */
 class TransferCompletionLedger {
     private val completed = mutableMapOf<String, Long?>()
+
+    @Synchronized fun snapshot(): Map<String, Long?> = completed.toMap()
 
     @Synchronized fun record(log: JSONObject): Pair<Long, Long?>? {
         if (!log.optString("level").equals("info", true)) return null

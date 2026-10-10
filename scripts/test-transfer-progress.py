@@ -38,4 +38,9 @@ with tempfile.TemporaryDirectory(prefix="rclone-progress-") as directory:
     assert records[-1]["transfers"] == 1
     assert completed == {"sample.bin": 6_000_000}
     assert (root / "destination" / "sample.bin").read_bytes() == (source / "sample.bin").read_bytes()
+    selected = root / "verified.txt"
+    selected.write_text("sample.bin\n")
+    listing = subprocess.check_output([sys.argv[1], "lsjson", str(root / "destination"),
+        "--recursive", "--files-only", "--no-mimetype", "--files-from-raw", str(selected)], text=True)
+    assert {file["Path"]: file["Size"] for file in json.loads(listing)} == completed
     print("PASS: periodic live JSON stats, bytes, total, speed and successful copy")
