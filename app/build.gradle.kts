@@ -11,8 +11,8 @@ android {
         applicationId = "dev.galaxy.rclonecards"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "2.1.3"
+        versionCode = 8
+        versionName = "2.1.4"
         manifestPlaceholders["appLabel"] = "Basic Rclone Flow"
         manifestPlaceholders["oauthScheme"] = "basic-rclone-flow"
         buildConfigField("String", "OAUTH_SCHEME", "\"basic-rclone-flow\"")

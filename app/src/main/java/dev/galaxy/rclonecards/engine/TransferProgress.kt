@@ -8,6 +8,42 @@ import kotlin.math.roundToInt
 
 /** Global transfer statistics, never an individual file's percentage. */
 object TransferProgress {
+    /** Older engines can wrap a multiline stats report in a JSON message without stats. */
+    fun fromText(state: JobState, message: String): JobState {
+        val report = message.replace(Regex("\u001b\\[[;\\d]*[ -/]*[@-~]"), "").replace('\r', ' ')
+        val amount = "([0-9.]+)\\s*(B|KiB|MiB|GiB|TiB|kBytes|MBytes|GBytes|TBytes)"
+        val bytes = Regex("(?i)Transferred:\\s*$amount\\s*/\\s*$amount\\s*,\\s*(\\d{1,3})%\\s*,\\s*$amount/s\\s*,\\s*ETA\\s*([^\\s]+)").find(report)
+        val files = Regex("(?i)Transferred:\\s*(\\d+)\\s*/\\s*(\\d+)\\s*,\\s*\\d{1,3}%").find(report)
+        if (bytes == null && files == null) return state
+        fun size(value: String, unit: String): Double = (value.toDoubleOrNull() ?: 0.0) * when (unit.lowercase()) {
+            "kib", "kbytes" -> 1024.0
+            "mib", "mbytes" -> 1048576.0
+            "gib", "gbytes" -> 1073741824.0
+            "tib", "tbytes" -> 1099511627776.0
+            else -> 1.0
+        }
+        fun duration(value: String): Double? {
+            if (value == "-") return null
+            val parts = Regex("([0-9.]+)([hms])").findAll(value).toList()
+            if (parts.isEmpty()) return null
+            return parts.sumOf { it.groupValues[1].toDouble() * when (it.groupValues[2]) { "h" -> 3600; "m" -> 60; else -> 1 } }
+        }
+        val running = state.status == JobStatus.RUNNING || state.status == JobStatus.PAUSED
+        val active = report.substringAfter("Transferring:", "").split('*').drop(1)
+        return state.copy(
+            bytes = bytes?.let { size(it.groupValues[1], it.groupValues[2]).toLong() } ?: state.bytes,
+            totalBytes = bytes?.let { size(it.groupValues[3], it.groupValues[4]).toLong() } ?: state.totalBytes,
+            progressPercent = bytes?.groupValues?.get(5)?.toInt()?.coerceIn(0, if (running) 99 else 100) ?: state.progressPercent,
+            speedBytesPerSecond = bytes?.let { size(it.groupValues[6], it.groupValues[7]) } ?: state.speedBytesPerSecond,
+            etaSeconds = if (bytes != null) duration(bytes.groupValues[8])?.toLong() else state.etaSeconds,
+            transfers = files?.groupValues?.get(1)?.toLong() ?: state.transfers,
+            totalTransfers = files?.groupValues?.get(2)?.toLong() ?: state.totalTransfers,
+            activeTransfers = active.size,
+            currentFile = active.firstOrNull()?.substringBeforeLast(':')?.trim()?.takeIf { it.isNotBlank() },
+            elapsedSeconds = Regex("Elapsed time:\\s*(\\S+)").find(report)?.groupValues?.get(1)?.let { duration(it) } ?: state.elapsedSeconds
+        )
+    }
+
     fun fromStats(state: JobState, stats: JSONObject): JobState {
         val bytes = stats.optLong("bytes", 0).coerceAtLeast(0)
         val totalBytes = stats.optLong("totalBytes", 0).coerceAtLeast(0)

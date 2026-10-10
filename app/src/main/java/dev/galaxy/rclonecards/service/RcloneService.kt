@@ -20,6 +20,8 @@ import dev.galaxy.rclonecards.data.CardStore
 import dev.galaxy.rclonecards.data.ConfigManager
 import dev.galaxy.rclonecards.data.JobHistoryStore
 import dev.galaxy.rclonecards.engine.RcloneEngine
+import dev.galaxy.rclonecards.engine.TransferProcess
+import dev.galaxy.rclonecards.engine.TransferStream
 import dev.galaxy.rclonecards.engine.TransferProgress
 import dev.galaxy.rclonecards.engine.TransferCompletionLedger
 import dev.galaxy.rclonecards.model.JobState
@@ -163,7 +165,7 @@ class RcloneService : Service() {
 
                 val process = builder.start()
                 processes[cardId] = process
-                if (JobRepository.get(cardId)?.status == JobStatus.STOPPED) process.destroyForcibly()
+                if (JobRepository.get(cardId)?.status == JobStatus.STOPPED) runCatching { process.destroyForcibly() }
 
                 var childPid: Int? = null
                 for (attempt in 0 until 40) {
@@ -229,8 +231,8 @@ class RcloneService : Service() {
                 processIds.remove(cardId)
                 JobRepository.update(cardId) {
                     it.copy(
-                        status = JobStatus.ERROR,
-                        lastError = t.message ?: t.javaClass.simpleName,
+                        status = if (it.status == JobStatus.STOPPED) JobStatus.STOPPED else JobStatus.ERROR,
+                        lastError = if (it.status == JobStatus.STOPPED) null else t.message ?: t.javaClass.simpleName,
                         finishedAtMillis = System.currentTimeMillis()
                     )
                 }
@@ -249,11 +251,11 @@ class RcloneService : Service() {
     private fun streamReader(cardId: String, reader: BufferedReader, label: String): Thread = thread(
         name = "rclone-stream-$cardId-$label"
     ) {
-        reader.useLines { lines ->
-            lines.forEach { line ->
-                handleLine(cardId, line, label)
+        TransferStream.read(reader, { line -> handleLine(cardId, line, label) }, { error ->
+            if (JobRepository.get(cardId)?.status != JobStatus.STOPPED) {
+                JobRepository.appendLog(cardId, "ERROR  Log stream closed: ${error.message}")
             }
-        }
+        })
     }
 
     private fun handleLine(cardId: String, raw: String, streamLabel: String) {
@@ -314,27 +316,7 @@ class RcloneService : Service() {
     }
 
     private fun parseProgressText(cardId: String, message: String) {
-        // Matches e.g. "Transferred: 42.13 MiB / 52.13 MiB, 81%" and
-        // "Transferred: 2 / 3, 66%"; never mistake a single file's 100% for job completion.
-        val clean = message.replace(Regex("""\[[;\d]*[ -/]*[@-~]"""), "").replace('\r', ' ')
-        val pct = Regex("""(?i)Transferred:\s*[^\n]*?[,\s]+(\d{1,3})%""").find(clean)
-            ?.groupValues?.getOrNull(1)?.toIntOrNull()
-        val bytes = Regex("""(?i)Transferred:\s*([0-9.]+)\s*(B|KiB|MiB|GiB|TiB)\s*/\s*([0-9.]+)\s*(B|KiB|MiB|GiB|TiB)""").find(clean)
-        val counts = Regex("""(?i)Transferred:\s*(\d+)\s*/\s*(\d+)\s*,\s*(\d{1,3})%""").find(clean)
-        if (pct == null && bytes == null && counts == null) return
-        fun amount(v: String, unit: String): Long {
-            val mult = when (unit.lowercase()) { "kib" -> 1024.0; "mib" -> 1048576.0; "gib" -> 1073741824.0; "tib" -> 1099511627776.0; else -> 1.0 }
-            return ((v.toDoubleOrNull() ?: 0.0) * mult).toLong()
-        }
-        JobRepository.update(cardId) { state ->
-            val running = state.status == JobStatus.RUNNING || state.status == JobStatus.PAUSED
-            val p = (pct ?: counts?.groupValues?.get(3)?.toIntOrNull() ?: state.progressPercent).coerceIn(0, if (running) 99 else 100)
-            state.copy(progressPercent = maxOf(state.progressPercent, p),
-                bytes = bytes?.let { amount(it.groupValues[1], it.groupValues[2]) } ?: state.bytes,
-                totalBytes = bytes?.let { amount(it.groupValues[3], it.groupValues[4]) } ?: state.totalBytes,
-                transfers = counts?.groupValues?.get(1)?.toLongOrNull() ?: state.transfers,
-                totalTransfers = counts?.groupValues?.get(2)?.toLongOrNull() ?: state.totalTransfers)
-        }
+        JobRepository.update(cardId) { TransferProgress.fromText(it, message) }
     }
 
     private fun pauseJob(cardId: String) {
@@ -381,19 +363,20 @@ class RcloneService : Service() {
             it.copy(status = JobStatus.STOPPED, lastError = null, finishedAtMillis = System.currentTimeMillis())
         }
         if (process != null) {
-            runCatching {
-                // Duraklatılmış bir işlemi önce devam ettir ki terminate sinyalini alabilsin.
-                processIds[cardId]?.let { pid ->
-                    Os.kill(pid, OsConstants.SIGCONT)
+            val childPid = processIds[cardId]
+            thread(name = "rclone-stop-$cardId") {
+                runCatching {
+                    TransferProcess.stop(process) {
+                        require(childPid != null && childPid > 1 && childPid != android.os.Process.myPid())
+                        // Resume a paused child before sending the same interrupt as Ctrl+C.
+                        Os.kill(childPid, OsConstants.SIGCONT)
+                        Os.kill(childPid, OsConstants.SIGINT)
+                    }
+                }.onFailure { error ->
+                    JobRepository.appendLog(cardId, "ERROR  Stop failed: ${error.message}")
                 }
             }
-            process.destroy()
-            thread {
-                Thread.sleep(1200)
-                if (process.isAlive) process.destroyForcibly()
-            }
         }
-        processIds.remove(cardId)
         synchronized(queueLock) { queue.remove(cardId) }
         JobRepository.appendLog(cardId, "STOP  Task stopped by user")
         updateForeground()
