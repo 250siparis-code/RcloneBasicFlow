@@ -1,6 +1,8 @@
 # Basic Rclone Flow validation checklist
 
-Version: **1.1.0-beta**
+Main source: **2.1.0**; latest experimental source: **2.1.4** in PR #1.
+
+This is a checklist, not a record of passed checks. Drive upload remains unresolved; see [HANDOFF.md](HANDOFF.md).
 
 ## Build
 
@@ -51,3 +53,12 @@ Version: **1.1.0-beta**
 - [ ] Full-app backup/restore works.
 - [ ] Clear All Cards does not touch Drive or local files.
 - [ ] Clear App Data does not delete Drive or local files.
+
+## Required Drive upload evidence
+
+- [ ] At least two real files upload completely on Android; list the actual destination names and sizes independently.
+- [ ] Repeat with large files, parallel transfers and an existing destination file.
+- [ ] Wait for actual successful process exit and file completion events; do not equate bytes at 100% with completed uploads.
+- [ ] Confirm Stop leaves the app open and stops only the selected task, including a paused task.
+- [ ] Confirm UI/notification counters match confirmed destination files and use consistent units.
+- [ ] Preserve existing cards, history, connections and local/Drive files throughout testing.
