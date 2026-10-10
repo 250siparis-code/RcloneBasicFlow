@@ -23,6 +23,7 @@ object TransferProgress {
             progressPercent = percent.coerceIn(0, if (running) 99 else 100),
             bytes = bytes, totalBytes = totalBytes,
             transfers = transfers, totalTransfers = totalTransfers,
+            activeTransfers = stats.optJSONArray("transferring")?.length() ?: 0,
             speedBytesPerSecond = stats.optDouble("speed", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
             etaSeconds = if (stats.isNull("eta")) null else stats.optLong("eta").takeIf { it >= 0 },
             elapsedSeconds = stats.optDouble("elapsedTime", 0.0),
@@ -34,6 +35,21 @@ object TransferProgress {
     fun formatSpeed(bytesPerSecond: Double): String = String.format(
         Locale.getDefault(), "%.2f MB/s", if (bytesPerSecond.isFinite()) bytesPerSecond.coerceAtLeast(0.0) / 1_000_000.0 else 0.0
     )
+}
+
+/** Counts unique successful file events, never partial reads or failed attempts. */
+class TransferCompletionLedger {
+    private val completed = mutableMapOf<String, Long?>()
+
+    @Synchronized fun record(log: JSONObject): Pair<Long, Long?>? {
+        if (!log.optString("level").equals("info", true)) return null
+        val message = log.optString("msg")
+        if (!Regex("^(?:Multi-thread )?Copied \\(").containsMatchIn(message) && !message.startsWith("Moved (server-side)")) return null
+        val name = log.optString("object").takeIf { it.isNotBlank() } ?: return null
+        val size = log.optLong("size", -1).takeIf { it >= 0 }
+        completed[name] = size
+        return completed.size.toLong() to if (completed.values.any { it == null }) null else completed.values.sumOf { it ?: 0 }
+    }
 }
 
 /** Terminal redraws suppress periodic JSON stats; the GUI owns stats output. */

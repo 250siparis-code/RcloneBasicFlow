@@ -517,7 +517,7 @@ private fun TaskCardItem(
     val completed=job?.status==JobStatus.COMPLETED
     val error=job?.status==JobStatus.ERROR
     Column(
-        Modifier.fillMaxWidth().height(146.dp).clip(RoundedCornerShape(24.dp)).background(Amoled)
+        Modifier.fillMaxWidth().heightIn(min = 184.dp).clip(RoundedCornerShape(24.dp)).background(Amoled)
             .border(if(active)1.5.dp else 1.dp,if(active)IconMuted.copy(alpha=.45f) else Outline,RoundedCornerShape(24.dp))
             .combinedClickable(onClick={},onDoubleClick=onDoubleClick,onLongClick=onLongPress).padding(14.dp)
     ){
@@ -552,7 +552,15 @@ private fun TaskCardItem(
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
+        if (job != null && (active || completed || error)) {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CardLiveMetric("Speed", formatSpeed(if (active) job.speedBytesPerSecond else 0.0), Modifier.weight(1f))
+                CardLiveMetric("ETA", if (completed) "—" else formatEta(job.etaSeconds).removePrefix("ETA "), Modifier.weight(1f))
+                CardLiveMetric("Completed files", "${job.confirmedFiles ?: job.transfers}", Modifier.weight(1f))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(28.dp),contentAlignment=Alignment.CenterStart){
             when{
                 active && job!=null -> ModernProgressBar(job)
@@ -567,6 +575,16 @@ private fun TaskCardItem(
 }
 
 @Composable
+private fun CardLiveMetric(label: String, value: String, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = TextDim, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(3.dp))
+        Text(value, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
 private fun ModernProgressBar(job:JobState){
     val p=job.progressPercent.coerceIn(0,100)
     val known = job.totalBytes > 0 || job.totalTransfers > 0 || job.status == JobStatus.COMPLETED
@@ -574,7 +592,7 @@ private fun ModernProgressBar(job:JobState){
     Box(Modifier.fillMaxWidth().height(maxOf(24.dp, barHeight)).clip(RoundedCornerShape(12.dp)).background(Color(0xFF17191D))){
         Box(Modifier.fillMaxHeight().fillMaxWidth(p/100f).clip(RoundedCornerShape(9.dp)).background(IconMuted.copy(alpha=.42f)))
         Text(if (known) "$p%" else "—",Modifier.align(Alignment.CenterEnd).padding(horizontal=10.dp, vertical=4.dp),
-            color=Color(0xFFE1E3E8),fontSize=11.sp,fontWeight=FontWeight.ExtraBold,
+            color=TextPrimary,fontSize=11.sp,fontWeight=FontWeight.ExtraBold,
             style=androidx.compose.ui.text.TextStyle(lineHeight=12.sp,
                 platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)))
     }
@@ -1001,13 +1019,15 @@ private fun DetailScreen(
 ) {
     val accent = IconMuted
     val state = job ?: JobState(cardId = card?.id.orEmpty(), title = card?.title ?: "Task")
+    var logExpanded by rememberSaveable(card?.id) { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
 
     Column(Modifier.fillMaxSize().background(Amoled)) {
         TopBar(title = card?.let { "${it.title} · ${it.actionLabel}" } ?: "Task Details", onBack = onBack, action = {
             IconButton(onClick = onMenu) { Icon(Icons.Default.MoreVert, "Menu", tint = TextSecondary) }
         })
 
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(9.dp).clip(CircleShape).background(statusColor(state.status)))
@@ -1019,8 +1039,9 @@ private fun DetailScreen(
             ModernProgressBar(state)
             Spacer(Modifier.height(18.dp))
 
-            StatRow(Icons.Default.Storage, if (state.totalBytes > 0) "${formatBytes(state.bytes)} / ${formatBytes(state.totalBytes)}" else formatBytes(state.bytes))
-            StatRow(Icons.Default.DoneAll, if (state.totalTransfers > 0) "${state.transfers} / ${state.totalTransfers} files" else "${state.transfers} files")
+            StatRow(Icons.Default.Storage, "Processed: " + if (state.totalBytes > 0) "${formatBytes(state.bytes)} / ${formatBytes(state.totalBytes)}" else formatBytes(state.bytes))
+            StatRow(Icons.Default.DoneAll, "Completed: ${state.confirmedFiles ?: state.transfers} files · ${state.confirmedBytes?.let { formatBytes(it) } ?: "size not confirmed"}")
+            if (state.activeTransfers > 0) StatRow(Icons.Default.Cloud, "${state.activeTransfers} files in progress")
             StatRow(Icons.Default.Refresh, formatSpeed(state.speedBytesPerSecond))
             StatRow(Icons.Default.Schedule, formatEta(state.etaSeconds))
             StatRow(Icons.Default.Code, "Elapsed: ${formatDuration(state.elapsedSeconds.toLong())}")
@@ -1034,23 +1055,29 @@ private fun DetailScreen(
             }
 
             Spacer(Modifier.height(14.dp))
-            Text("LIVE LOG", color = TextDim, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF080809))
-                    .border(1.dp, Color(0xFF17171A), RoundedCornerShape(16.dp))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                items(state.logs) { line ->
-                    Text(line, color = logColor(line), fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { logExpanded = !logExpanded }, modifier = Modifier.weight(1f)) {
+                    Text(if (logExpanded) "Hide live log" else "Show live log", color = TextSecondary)
+                }
+                TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(state.logs.joinToString("\n"))) }) {
+                    Text("Copy log", color = TextPrimary)
                 }
             }
-
+            if (logExpanded) {
+                SelectionContainer {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                            .clip(RoundedCornerShape(16.dp)).background(Color(0xFF080809))
+                            .border(1.dp, Color(0xFF17171A), RoundedCornerShape(16.dp)).padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        items(state.logs) { line ->
+                            Text(line, color = logColor(line), fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
             Spacer(Modifier.height(12.dp))
             when (state.status) {
                 JobStatus.RUNNING -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

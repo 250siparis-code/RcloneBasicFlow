@@ -19,9 +19,12 @@ with tempfile.TemporaryDirectory(prefix="rclone-progress-") as directory:
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     records = []
+    completed = {}
     live = False
     for line in process.stderr:
         record = json.loads(line)
+        if record.get("level") == "info" and record.get("msg", "").startswith("Copied ("):
+            completed[record["object"]] = record["size"]
         stats = record.get("stats")
         if stats:
             records.append(stats)
@@ -33,5 +36,6 @@ with tempfile.TemporaryDirectory(prefix="rclone-progress-") as directory:
     assert len(records) >= 2
     assert records[-1]["bytes"] == 6_000_000
     assert records[-1]["transfers"] == 1
+    assert completed == {"sample.bin": 6_000_000}
     assert (root / "destination" / "sample.bin").read_bytes() == (source / "sample.bin").read_bytes()
     print("PASS: periodic live JSON stats, bytes, total, speed and successful copy")

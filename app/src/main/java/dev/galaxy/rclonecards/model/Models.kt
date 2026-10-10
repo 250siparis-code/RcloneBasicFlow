@@ -33,6 +33,9 @@ data class JobState(
     val totalBytes: Long = 0L,
     val transfers: Long = 0L,
     val totalTransfers: Long = 0L,
+    val confirmedBytes: Long? = null,
+    val confirmedFiles: Long? = null,
+    val activeTransfers: Int = 0,
     val speedBytesPerSecond: Double = 0.0,
     val etaSeconds: Long? = null,
     val elapsedSeconds: Double = 0.0,
@@ -59,5 +62,7 @@ data class JobHistoryEntry(
     val startedAtMillis: Long?,
     val finishedAtMillis: Long,
     val exitCode: Int?,
-    val lastError: String?
+    val lastError: String?,
+    val confirmedBytes: Long? = null,
+    val confirmedFiles: Long? = null
 )

@@ -21,6 +21,7 @@ import dev.galaxy.rclonecards.data.ConfigManager
 import dev.galaxy.rclonecards.data.JobHistoryStore
 import dev.galaxy.rclonecards.engine.RcloneEngine
 import dev.galaxy.rclonecards.engine.TransferProgress
+import dev.galaxy.rclonecards.engine.TransferCompletionLedger
 import dev.galaxy.rclonecards.model.JobState
 import dev.galaxy.rclonecards.model.JobStatus
 import org.json.JSONObject
@@ -48,6 +49,7 @@ class RcloneService : Service() {
 
     private val processes = ConcurrentHashMap<String, Process>()
     private val startingJobs = ConcurrentHashMap.newKeySet<String>()
+    private val completions = ConcurrentHashMap<String, TransferCompletionLedger>()
     private val processIds = ConcurrentHashMap<String, Int>()
     private val queue = ArrayDeque<String>()
     private val queueLock = Any()
@@ -123,6 +125,7 @@ class RcloneService : Service() {
         }
 
         if (!startingJobs.add(cardId)) return
+        completions[cardId] = TransferCompletionLedger()
         acquireWakeLock()
         JobRepository.put(
             JobState(
@@ -233,6 +236,7 @@ class RcloneService : Service() {
                 }
             } finally {
                 startingJobs.remove(cardId)
+                completions.remove(cardId)
                 recordHistory(cardId)
                 postResultNotification(cardId)
                 updateForeground()
@@ -264,6 +268,9 @@ class RcloneService : Service() {
             val level = obj.optString("level", "info")
             val msg = obj.optString("msg", raw).trim()
             val objectName = obj.optString("object", "")
+            completions[cardId]?.record(obj)?.let { (files, bytes) ->
+                JobRepository.update(cardId) { it.copy(confirmedFiles = files, confirmedBytes = bytes) }
+            }
             display = buildString {
                 append(level.uppercase())
                 append("  ")
